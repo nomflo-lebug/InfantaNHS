@@ -1,7 +1,6 @@
 import React from 'react';
 import { ShieldCheck, MapPin, Phone, Mail, Award, ArrowUp } from 'lucide-react';
 import { VisitorCounter } from './VisitorCounter';
-import { APP_ASSETS } from '../assets';
 
 interface FooterProps {
   onNavigate: (sectionId: string) => void;
@@ -56,13 +55,10 @@ export const Footer: React.FC<FooterProps> = ({
           {/* Col 1 & 2: School Identity */}
           <div className="col-span-2 space-y-4">
             <div className="flex items-center gap-3.5">
-              <div className="w-16 h-16 shrink-0 rounded-full overflow-hidden flex items-center justify-center bg-blue-900 shadow-sm">
+              <div className="w-16 h-16 shrink-0 rounded-full overflow-hidden flex items-center justify-center">
                 <img
-                  src={APP_ASSETS.logo}
+                  src="/assets/aistudio/INHS_LOGO_v2_3c57a62d.png"
                   alt="Infanta NHS Official Logo"
-                  onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).src = APP_ASSETS.publicLogo;
-                  }}
                   className="w-full h-full object-cover scale-[1.04] rounded-full"
                 />
               </div>
