@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Users, TrendingUp, Calendar, RefreshCw, RotateCcw, Check, Sparkles } from 'lucide-react';
+import { Users, TrendingUp, Calendar, Activity } from 'lucide-react';
 
 interface VisitorStats {
   totalVisits: number;
@@ -9,7 +9,7 @@ interface VisitorStats {
   userVisitNumber: number;
 }
 
-// Reset namespace for counter baseline
+// Storage namespace for portal visits
 const STORAGE_KEYS = {
   TOTAL: 'inhs_v6_total_visits',
   TODAY: 'inhs_v6_today_visits',
@@ -20,56 +20,43 @@ const STORAGE_KEYS = {
   USER_VISIT_NUM: 'inhs_v6_user_visit_rank',
 };
 
-const BASE_TOTAL_VISITS = 1;
-const BASE_TODAY_VISITS = 1;
-const BASE_MONTH_VISITS = 1;
-
 export const VisitorCounter: React.FC = () => {
   const [stats, setStats] = useState<VisitorStats>({
-    totalVisits: BASE_TOTAL_VISITS,
-    todayVisits: BASE_TODAY_VISITS,
-    monthVisits: BASE_MONTH_VISITS,
+    totalVisits: 1,
+    todayVisits: 1,
+    monthVisits: 1,
     activeOnline: 3,
-    userVisitNumber: BASE_TOTAL_VISITS,
+    userVisitNumber: 1,
   });
-
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [resetConfirm, setResetConfirm] = useState(false);
 
   useEffect(() => {
     try {
-      // Purge all legacy stored counts to strictly reset counter as requested
-      const legacyKeys = [
-        'inhs_total_visits', 'inhs_today_visits', 'inhs_last_visit_date', 
-        'inhs_month_visits', 'inhs_last_visit_month', 'inhs_session_visited_flag',
-        'inhs_user_visit_rank', 'inhs_v3_total_visits', 'inhs_v3_today_visits',
-        'inhs_v3_last_visit_date', 'inhs_v3_month_visits', 'inhs_v3_last_visit_month',
-        'inhs_v3_session_visited_flag', 'inhs_v3_user_visit_rank',
-        'inhs_v4_total_visits', 'inhs_v5_total_visits'
-      ];
-      legacyKeys.forEach(k => localStorage.removeItem(k));
-
       const todayStr = new Date().toISOString().split('T')[0];
       const monthStr = todayStr.substring(0, 7);
 
       const storedTotal = localStorage.getItem(STORAGE_KEYS.TOTAL);
-      let currentTotal = storedTotal ? parseInt(storedTotal, 10) : BASE_TOTAL_VISITS;
-      if (isNaN(currentTotal) || currentTotal > 1000) currentTotal = BASE_TOTAL_VISITS;
+      let currentTotal = storedTotal ? parseInt(storedTotal, 10) : 0;
+      if (isNaN(currentTotal) || currentTotal < 0) currentTotal = 0;
 
       const storedTodayDate = localStorage.getItem(STORAGE_KEYS.TODAY_DATE);
       const storedToday = localStorage.getItem(STORAGE_KEYS.TODAY);
-      let currentToday = storedTodayDate === todayStr && storedToday ? parseInt(storedToday, 10) : BASE_TODAY_VISITS;
-      if (isNaN(currentToday)) currentToday = BASE_TODAY_VISITS;
+      let currentToday = storedTodayDate === todayStr && storedToday ? parseInt(storedToday, 10) : 0;
+      if (isNaN(currentToday) || currentToday < 0) currentToday = 0;
 
       const storedMonthKey = localStorage.getItem(STORAGE_KEYS.MONTH_KEY);
       const storedMonth = localStorage.getItem(STORAGE_KEYS.MONTH);
-      let currentMonth = storedMonthKey === monthStr && storedMonth ? parseInt(storedMonth, 10) : BASE_MONTH_VISITS;
-      if (isNaN(currentMonth)) currentMonth = BASE_MONTH_VISITS;
+      let currentMonth = storedMonthKey === monthStr && storedMonth ? parseInt(storedMonth, 10) : 0;
+      if (isNaN(currentMonth) || currentMonth < 0) currentMonth = 0;
 
       let userRank = localStorage.getItem(STORAGE_KEYS.USER_VISIT_NUM);
 
+      // Automatically record +1 whenever a visitor arrives in a new session
       const alreadyCountedInSession = sessionStorage.getItem(STORAGE_KEYS.SESSION_LOGGED);
       if (!alreadyCountedInSession) {
+        currentTotal += 1;
+        currentToday += 1;
+        currentMonth += 1;
+
         sessionStorage.setItem(STORAGE_KEYS.SESSION_LOGGED, 'true');
         localStorage.setItem(STORAGE_KEYS.TOTAL, currentTotal.toString());
         localStorage.setItem(STORAGE_KEYS.TODAY, currentToday.toString());
@@ -88,21 +75,23 @@ export const VisitorCounter: React.FC = () => {
         userVisitNumber: userRank ? parseInt(userRank, 10) : currentTotal,
       });
 
+      // Synchronize with top header visit badge
       window.dispatchEvent(new CustomEvent('inhs_visitor_count_updated', { detail: currentTotal }));
     } catch {
       setStats({
-        totalVisits: BASE_TOTAL_VISITS,
-        todayVisits: BASE_TODAY_VISITS,
-        monthVisits: BASE_MONTH_VISITS,
+        totalVisits: 1,
+        todayVisits: 1,
+        monthVisits: 1,
         activeOnline: 3,
-        userVisitNumber: BASE_TOTAL_VISITS,
+        userVisitNumber: 1,
       });
     }
 
+    // Dynamic active online fluctuation
     const interval = setInterval(() => {
       setStats((prev) => {
         const delta = Math.floor(Math.random() * 3) - 1;
-        const nextOnline = Math.max(2, Math.min(6, prev.activeOnline + delta));
+        const nextOnline = Math.max(2, Math.min(7, prev.activeOnline + delta));
         return { ...prev, activeOnline: nextOnline };
       });
     }, 30000);
@@ -110,53 +99,7 @@ export const VisitorCounter: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleSimulateVisit = () => {
-    setIsAnimating(true);
-    setStats((prev) => {
-      const nextTotal = prev.totalVisits + 1;
-      const nextToday = prev.todayVisits + 1;
-      const nextMonth = prev.monthVisits + 1;
-      try {
-        localStorage.setItem(STORAGE_KEYS.TOTAL, nextTotal.toString());
-        localStorage.setItem(STORAGE_KEYS.TODAY, nextToday.toString());
-        localStorage.setItem(STORAGE_KEYS.MONTH, nextMonth.toString());
-      } catch {
-        // ignore storage errors
-      }
-      window.dispatchEvent(new CustomEvent('inhs_visitor_count_updated', { detail: nextTotal }));
-      return {
-        ...prev,
-        totalVisits: nextTotal,
-        todayVisits: nextToday,
-        monthVisits: nextMonth,
-      };
-    });
-    setTimeout(() => setIsAnimating(false), 500);
-  };
-
-  const handleResetCounter = () => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.TOTAL, '1');
-      localStorage.setItem(STORAGE_KEYS.TODAY, '1');
-      localStorage.setItem(STORAGE_KEYS.MONTH, '1');
-      localStorage.setItem(STORAGE_KEYS.USER_VISIT_NUM, '1');
-      sessionStorage.removeItem(STORAGE_KEYS.SESSION_LOGGED);
-      window.dispatchEvent(new CustomEvent('inhs_visitor_count_updated', { detail: 1 }));
-    } catch {
-      // ignore
-    }
-    setStats({
-      totalVisits: 1,
-      todayVisits: 1,
-      monthVisits: 1,
-      activeOnline: 2,
-      userVisitNumber: 1,
-    });
-    setResetConfirm(true);
-    setTimeout(() => setResetConfirm(false), 2500);
-  };
-
-  // 5-digit compact roller
+  // 5-digit compact mechanical roller
   const digits = useMemo(() => {
     const str = stats.totalVisits.toString().padStart(5, '0');
     return str.split('');
@@ -164,7 +107,7 @@ export const VisitorCounter: React.FC = () => {
 
   return (
     <div id="visitor-counter" className="relative bg-slate-900/95 rounded-xl border border-slate-800/90 p-3 sm:p-3.5 backdrop-blur-md shadow-md max-w-lg mx-auto">
-      {/* Top micro bar */}
+      {/* Top micro bar with live tracking indicator */}
       <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-800">
         <div className="flex items-center gap-1.5">
           <span className="flex h-1.5 w-1.5 relative">
@@ -176,39 +119,9 @@ export const VisitorCounter: React.FC = () => {
           </span>
         </div>
 
-        <div className="flex items-center gap-1">
-          <button
-            onClick={handleResetCounter}
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold transition-all border cursor-pointer ${
-              resetConfirm
-                ? 'bg-emerald-950 text-emerald-300 border-emerald-600'
-                : 'bg-slate-800/80 hover:bg-slate-700 text-slate-400 border-slate-700/60'
-            }`}
-            title="Reset counter baseline to 1"
-          >
-            {resetConfirm ? (
-              <>
-                <Check className="w-2.5 h-2.5 text-emerald-400" />
-                <span>Reset to 1</span>
-              </>
-            ) : (
-              <>
-                <RotateCcw className="w-2.5 h-2.5" />
-                <span>Reset</span>
-              </>
-            )}
-          </button>
-
-          <button
-            onClick={handleSimulateVisit}
-            className={`flex items-center gap-1 px-1.5 py-0.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-[9px] font-semibold rounded border border-slate-700/60 transition-all cursor-pointer ${
-              isAnimating ? 'text-amber-300 border-amber-400/40 scale-95' : ''
-            }`}
-            title="Record simulated visit"
-          >
-            <RefreshCw className={`w-2.5 h-2.5 ${isAnimating ? 'animate-spin text-amber-400' : ''}`} />
-            <span>+1 Hit</span>
-          </button>
+        <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+          <Activity className="w-3 h-3 text-emerald-400" />
+          <span className="font-mono text-[9px] uppercase tracking-wide text-slate-400">Auto-Recording Live</span>
         </div>
       </div>
 
