@@ -26,23 +26,23 @@ export const ContactSection: React.FC = () => {
   };
 
   return (
-    <section id="contact" className="py-20 bg-white border-b border-slate-200 scroll-mt-48 sm:scroll-mt-52 lg:scroll-mt-56">
+    <section id="contact" className="py-10 sm:py-12 bg-white border-b border-slate-200 scroll-mt-36 sm:scroll-mt-40 lg:scroll-mt-44">
       <div className="max-w-7xl mx-auto px-4 sm:px-8">
         
         {/* Section Header */}
-        <div className="max-w-3xl mb-12">
+        <div className="max-w-3xl mb-6 sm:mb-8">
           <span className="text-xs font-bold tracking-widest uppercase text-blue-900">
             Get In Touch
           </span>
           <h2 className="text-3xl sm:text-4xl font-extrabold font-crest tracking-tight text-slate-900 mt-1">
             Contact Infanta National High School
           </h2>
-          <p className="text-sm sm:text-base text-slate-600 mt-3 leading-relaxed">
+          <p className="text-sm sm:text-base text-slate-600 mt-2 leading-relaxed">
             Have questions regarding admissions, Form 137 requests, graduation credentials, or teacher consultations? Our administrative office is ready to assist you.
           </p>
         </div>
 
-        <div className="grid lg:grid-cols-12 gap-10">
+        <div className="grid lg:grid-cols-12 gap-6 sm:gap-8">
           
           {/* Institutional Contact Info & Map Guide */}
           <div className="lg:col-span-5 space-y-6">

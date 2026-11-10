@@ -36,24 +36,24 @@ export const JuniorHighSection: React.FC<JuniorHighSectionProps> = ({ onNavigate
   ];
 
   return (
-    <section id="junior-high" className="py-20 bg-white border-b border-slate-200 scroll-mt-48 sm:scroll-mt-52 lg:scroll-mt-56">
+    <section id="junior-high" className="py-10 sm:py-12 bg-white border-b border-slate-200 scroll-mt-36 sm:scroll-mt-40 lg:scroll-mt-44">
       <div className="max-w-7xl mx-auto px-4 sm:px-8">
         
         {/* Section Header */}
-        <div className="max-w-3xl mb-12">
+        <div className="max-w-3xl mb-6 sm:mb-8">
           <span className="text-xs font-bold tracking-widest uppercase text-blue-900">
             Grades 7 to 10 Programs
           </span>
           <h2 className="text-3xl sm:text-4xl font-extrabold font-crest tracking-tight text-slate-900 mt-1">
             Junior High School Curriculum
           </h2>
-          <p className="text-sm sm:text-base text-slate-600 mt-3 leading-relaxed">
+          <p className="text-sm sm:text-base text-slate-600 mt-2 leading-relaxed">
             Building strong academic foundations in science, mathematics, language, and vocational exploratory skills to prepare adolescent learners for higher academic tracks and life.
           </p>
         </div>
 
         {/* Curriculum Selector Tabs */}
-        <div className="flex border-b border-slate-200 gap-2 overflow-x-auto pb-px mb-8">
+        <div className="flex border-b border-slate-200 gap-2 overflow-x-auto pb-px mb-6">
           <button
             onClick={() => setSelectedCurriculum('ste')}
             className={`px-4 py-2.5 text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer flex items-center gap-2 ${

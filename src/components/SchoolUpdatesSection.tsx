@@ -38,11 +38,11 @@ export const SchoolUpdatesSection: React.FC = () => {
     : updates.filter(u => u.category === selectedCategory);
 
   return (
-    <section id="updates" className="py-20 bg-slate-50 border-b border-slate-200 scroll-mt-48 sm:scroll-mt-52 lg:scroll-mt-56">
+    <section id="updates" className="py-10 sm:py-12 bg-slate-50 border-b border-slate-200 scroll-mt-36 sm:scroll-mt-40 lg:scroll-mt-44">
       <div className="max-w-7xl mx-auto px-4 sm:px-8">
         
         {/* Section Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
+        <div className="flex flex-col md:flex-row md:items-end justify-between mb-6 sm:mb-7 gap-4">
           <div>
             <span className="text-xs font-bold tracking-widest uppercase text-blue-900">
               Bulletin & Events

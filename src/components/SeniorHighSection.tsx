@@ -90,26 +90,26 @@ export const SeniorHighSection: React.FC<SeniorHighSectionProps> = ({ onNavigate
   const current = strandDetails[selectedStrand] || strandDetails.stem;
 
   return (
-    <section id="senior-high" className="py-20 bg-slate-50 border-b border-slate-200 scroll-mt-48 sm:scroll-mt-52 lg:scroll-mt-56">
+    <section id="senior-high" className="py-10 sm:py-12 bg-slate-50 border-b border-slate-200 scroll-mt-36 sm:scroll-mt-40 lg:scroll-mt-44">
       <div className="max-w-7xl mx-auto px-4 sm:px-8">
         
         {/* Section Header */}
-        <div className="max-w-3xl mb-12">
+        <div className="max-w-3xl mb-6 sm:mb-8">
           <span className="text-xs font-bold tracking-widest uppercase text-blue-900">
             Grades 11 & 12 Programs
           </span>
           <h2 className="text-3xl sm:text-4xl font-extrabold font-crest tracking-tight text-slate-900 mt-1">
             Senior High School Tracks & Strands
           </h2>
-          <p className="text-sm sm:text-base text-slate-600 mt-3 leading-relaxed">
+          <p className="text-sm sm:text-base text-slate-600 mt-2 leading-relaxed">
             Equipping learners with academic excellence for university education and TESDA National Certifications (NC II) for immediate industry readiness or entrepreneurship.
           </p>
         </div>
 
         {/* Media Feature Banner */}
-        <div className="relative rounded-2xl overflow-hidden mb-12 shadow-lg border border-slate-200">
+        <div className="relative rounded-2xl overflow-hidden mb-6 sm:mb-8 shadow-lg border border-slate-200">
           <div className="grid lg:grid-cols-12 items-center bg-slate-900 text-white">
-            <div className="lg:col-span-7 p-6 sm:p-10 space-y-4">
+            <div className="lg:col-span-7 p-5 sm:p-7 space-y-3">
               <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
                 World-Class Experiential Learning
               </span>
@@ -119,13 +119,13 @@ export const SeniorHighSection: React.FC<SeniorHighSectionProps> = ({ onNavigate
               <p className="text-sm text-slate-300 leading-relaxed">
                 Senior high students at Infanta NHS gain practical, hands-on experience in our modern science laboratories and through 80 to 320 hours of off-campus Work Immersion with local government units, hospitals, financial cooperatives, and technical workshops in Infanta and Quezon province.
               </p>
-              <div className="flex flex-wrap gap-4 pt-2 text-xs text-slate-400 font-mono-num">
+              <div className="flex flex-wrap gap-4 pt-1 text-xs text-slate-400 font-mono-num">
                 <span>· 80-320 Hours Work Immersion</span>
                 <span>· DepEd Senior High Voucher Center</span>
                 <span>· 100% Free Tuition</span>
               </div>
             </div>
-            <div className="lg:col-span-5 h-64 lg:h-full min-h-[280px] bg-slate-800">
+            <div className="lg:col-span-5 h-56 lg:h-full min-h-[240px] bg-slate-800">
               <img
                 src="/assets/images/classroom_stem_laboratory_1793804197413.jpg"
                 alt="Infanta NHS STEM Science Laboratory"

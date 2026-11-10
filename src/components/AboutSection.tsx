@@ -52,24 +52,24 @@ export const AboutSection: React.FC = () => {
   ];
 
   return (
-    <section id="about" className="py-20 bg-white border-b border-slate-200 scroll-mt-48 sm:scroll-mt-52 lg:scroll-mt-56">
+    <section id="about" className="py-10 sm:py-12 bg-white border-b border-slate-200 scroll-mt-36 sm:scroll-mt-40 lg:scroll-mt-44">
       <div className="max-w-7xl mx-auto px-4 sm:px-8">
         
         {/* Section Header */}
-        <div className="max-w-3xl mb-12">
+        <div className="max-w-3xl mb-6 sm:mb-8">
           <span className="text-xs font-bold tracking-widest uppercase text-blue-900">
             About Our Institution
           </span>
           <h2 className="text-3xl sm:text-4xl font-extrabold font-crest tracking-tight text-slate-900 mt-1">
             Infanta National High School
           </h2>
-          <p className="text-base text-slate-600 mt-3 leading-relaxed">
+          <p className="text-base text-slate-600 mt-2 leading-relaxed">
             Established in 1947 in the coastal municipality of Infanta, Quezon, our school stands as the beacon of secondary education, empowering generations of scholars and builders across the Pacific seaboard.
           </p>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-200 gap-2 overflow-x-auto pb-px mb-8">
+        <div className="flex border-b border-slate-200 gap-2 overflow-x-auto pb-px mb-6">
           <button
             onClick={() => setActiveTab('overview')}
             className={`px-4 py-2.5 text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer ${

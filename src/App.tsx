@@ -55,7 +55,7 @@ export default function App() {
       const sectionIds = ['updates', 'student-life', 'junior-high', 'senior-high', 'admissions', 'about', 'contact'];
       const headerEl = document.querySelector('header');
       const headerHeight = headerEl ? headerEl.getBoundingClientRect().height : 185;
-      const triggerY = window.pageYOffset + headerHeight + 50;
+      const triggerY = window.pageYOffset + headerHeight + 20;
 
       for (let i = sectionIds.length - 1; i >= 0; i--) {
         const sec = document.getElementById(sectionIds[i]);

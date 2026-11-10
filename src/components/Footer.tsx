@@ -49,7 +49,7 @@ export const Footer: React.FC<FooterProps> = ({
       </div>
 
       {/* Main Footer Links */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-8 py-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-8 py-8 sm:py-10">
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8">
           
           {/* Col 1 & 2: School Identity */}
@@ -190,12 +190,12 @@ export const Footer: React.FC<FooterProps> = ({
         </div>
 
         {/* Official Web Traffic & Visitor Analytics Counter */}
-        <div className="mt-12">
+        <div className="mt-6">
           <VisitorCounter />
         </div>
 
         {/* Bottom Strip */}
-        <div className="mt-10 pt-6 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-between gap-4 text-slate-500 text-[11px]">
+        <div className="mt-6 pt-4 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-between gap-4 text-slate-500 text-[11px]">
           <div>
             &copy; 1947–2026 Infanta National High School · All Rights Reserved. Department of Education Region IV-A.
           </div>

@@ -26,11 +26,11 @@ export const AdmissionsSection: React.FC<AdmissionsSectionProps> = ({
   onOpenEnrollmentPortal 
 }) => {
   return (
-    <section id="admissions" className="py-20 bg-slate-50 border-b border-slate-200 scroll-mt-48 sm:scroll-mt-52 lg:scroll-mt-56">
+    <section id="admissions" className="py-10 sm:py-12 bg-slate-50 border-b border-slate-200 scroll-mt-36 sm:scroll-mt-40 lg:scroll-mt-44">
       <div className="max-w-7xl mx-auto px-4 sm:px-8">
         
         {/* Section Header */}
-        <div className="max-w-3xl mb-10">
+        <div className="max-w-3xl mb-6 sm:mb-8">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold tracking-widest uppercase text-blue-900">
               Admissions & Enrollment Office
@@ -42,13 +42,13 @@ export const AdmissionsSection: React.FC<AdmissionsSectionProps> = ({
           <h2 className="text-3xl sm:text-4xl font-extrabold font-crest tracking-tight text-slate-900 mt-1">
             Join the Infanta NHS Scholastic Community
           </h2>
-          <p className="text-sm sm:text-base text-slate-600 mt-3 leading-relaxed">
+          <p className="text-sm sm:text-base text-slate-600 mt-2 leading-relaxed">
             In accordance with DepEd Order No. 03, s. 2018, public high school basic education at Infanta National High School is 100% free with <strong>NO ENTRANCE FEES OR MANDATORY COLLECTIONS</strong>. We welcome elementary graduates, junior high completers, and transferees.
           </p>
         </div>
 
         {/* Dedicated Standalone Portal Banner */}
-        <div className="bg-gradient-to-br from-blue-950 via-blue-900 to-indigo-950 text-white rounded-3xl p-8 sm:p-12 shadow-xl border border-blue-900/60 relative overflow-hidden mb-12">
+        <div className="bg-gradient-to-br from-blue-950 via-blue-900 to-indigo-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl border border-blue-900/60 relative overflow-hidden mb-6 sm:mb-8">
           {/* Subtle Background Graphic */}
           <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
           

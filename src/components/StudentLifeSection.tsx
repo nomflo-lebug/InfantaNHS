@@ -54,26 +54,26 @@ export const StudentLifeSection: React.FC = () => {
   ];
 
   return (
-    <section id="student-life" className="py-20 bg-white border-b border-slate-200 scroll-mt-48 sm:scroll-mt-52 lg:scroll-mt-56">
+    <section id="student-life" className="py-10 sm:py-12 bg-white border-b border-slate-200 scroll-mt-36 sm:scroll-mt-40 lg:scroll-mt-44">
       <div className="max-w-7xl mx-auto px-4 sm:px-8">
         
         {/* Section Header */}
-        <div className="max-w-3xl mb-12">
+        <div className="max-w-3xl mb-6 sm:mb-8">
           <span className="text-xs font-bold tracking-widest uppercase text-blue-900">
             Holistic Learner Development
           </span>
           <h2 className="text-3xl sm:text-4xl font-extrabold font-crest tracking-tight text-slate-900 mt-1">
             Vibrant Student Life & Organizations
           </h2>
-          <p className="text-sm sm:text-base text-slate-600 mt-3 leading-relaxed">
+          <p className="text-sm sm:text-base text-slate-600 mt-2 leading-relaxed">
             Beyond academic classrooms, Infanta High empowers young leaders, journalists, athletes, artists, and environmental stewards through meaningful co-curricular participation.
           </p>
         </div>
 
         {/* Media Feature Banner */}
-        <div className="relative rounded-2xl overflow-hidden mb-12 shadow-lg border border-slate-200">
+        <div className="relative rounded-2xl overflow-hidden mb-6 sm:mb-8 shadow-lg border border-slate-200">
           <div className="grid lg:grid-cols-12 items-center bg-slate-900 text-white">
-            <div className="lg:col-span-5 h-64 lg:h-full min-h-[280px] order-last lg:order-first bg-slate-800">
+            <div className="lg:col-span-5 h-56 lg:h-full min-h-[240px] order-last lg:order-first bg-slate-800">
               <img
                 src="/assets/images/school_student_life_1793804199202.jpg"
                 alt="Infanta NHS Learner Government Council and Student Life"
@@ -82,7 +82,7 @@ export const StudentLifeSection: React.FC = () => {
                 className="w-full h-full object-cover object-center filter brightness-95"
               />
             </div>
-            <div className="lg:col-span-7 p-6 sm:p-10 space-y-4">
+            <div className="lg:col-span-7 p-5 sm:p-7 space-y-3">
               <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
                 Youth Leadership & Governance
               </span>
@@ -92,7 +92,7 @@ export const StudentLifeSection: React.FC = () => {
               <p className="text-sm text-slate-300 leading-relaxed">
                 The SSLG is the highest governing student body of Infanta National High School. Elected by the student body, learner leaders organize anti-bullying initiatives, coastal clean-ups, mental health symposiums, and student rights dialogues in close partnership with school administration and the PTA.
               </p>
-              <div className="flex flex-wrap gap-4 pt-2 text-xs text-slate-400 font-mono-num">
+              <div className="flex flex-wrap gap-4 pt-1 text-xs text-slate-400 font-mono-num">
                 <span>· 100% Student-Led Initiatives</span>
                 <span>· Democratic Election Every S.Y.</span>
                 <span>· DepEd Order No. 47, s. 2014 Compliant</span>
@@ -102,7 +102,7 @@ export const StudentLifeSection: React.FC = () => {
         </div>
 
         {/* Tab Selection */}
-        <div className="flex border-b border-slate-200 gap-2 overflow-x-auto pb-px mb-8">
+        <div className="flex border-b border-slate-200 gap-2 overflow-x-auto pb-px mb-6">
           <button
             onClick={() => setActiveTab('sslg')}
             className={`px-4 py-2.5 text-sm font-semibold transition-colors whitespace-nowrap cursor-pointer ${

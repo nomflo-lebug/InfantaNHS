@@ -36,21 +36,21 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
         <div className="absolute inset-0 bg-gradient-to-r from-slate-950/95 via-slate-950/85 to-blue-950/60" />
       </div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-8 py-16 lg:py-24">
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-8 py-10 sm:py-12 lg:py-14">
         {/* Urgent Announcement Ticker */}
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-400/20 border border-amber-400/40 text-amber-200 text-xs font-medium mb-6 backdrop-blur-xs">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-400/20 border border-amber-400/40 text-amber-200 text-xs font-medium mb-4 backdrop-blur-xs">
           <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
           <span>DepEd Early Registration for S.Y. 2026-2027 is Ongoing · Grade 7 & Grade 11</span>
         </div>
 
-        <div className="grid lg:grid-cols-12 gap-10 items-center">
+        <div className="grid lg:grid-cols-12 gap-6 lg:gap-8 items-center">
           {/* Main Hero Narrative */}
-          <div className="lg:col-span-8 space-y-6">
-            <div className="space-y-3">
+          <div className="lg:col-span-8 space-y-4">
+            <div className="space-y-2">
               <span className="text-xs sm:text-sm font-semibold tracking-wider uppercase text-amber-400">
                 Honor · Excellence · Service
               </span>
-              <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold font-crest tracking-tight leading-tight text-white drop-shadow-xs">
+              <h2 className="text-[1.35rem] min-[390px]:text-[1.55rem] sm:text-3xl md:text-4xl lg:text-[2.5rem] xl:text-[3.1rem] font-extrabold font-crest tracking-tight leading-tight text-white drop-shadow-xs whitespace-nowrap">
                 Infanta National High School
               </h2>
               <p className="text-base sm:text-lg text-slate-300 max-w-2xl leading-relaxed">
@@ -162,7 +162,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
         </div>
 
         {/* 4-Metric Institutional Proof Strip */}
-        <div className="mt-14 pt-8 border-t border-slate-800/80 grid grid-cols-2 md:grid-cols-4 gap-6">
+        <div className="mt-8 pt-5 border-t border-slate-800/80 grid grid-cols-2 md:grid-cols-4 gap-6">
           <div className="space-y-1">
             <div className="text-2xl sm:text-3xl font-bold font-mono-num text-amber-400">4,428</div>
             <div className="text-xs text-slate-300 font-medium">Officially Enrolled Learners</div>
