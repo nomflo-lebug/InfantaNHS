@@ -54,13 +54,16 @@
   #printable-roster-document,
   #printable-roster-document *,
   #printable-sf1-document,
-  #printable-sf1-document * {
+  #printable-sf1-document *,
+  #printable-masterlist-document,
+  #printable-masterlist-document * {
     visibility: visible;
   }
 
   #printable-sf9-document,
   #printable-roster-document,
-  #printable-sf1-document {
+  #printable-sf1-document,
+  #printable-masterlist-document {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;

@@ -37,6 +37,7 @@ import {
 } from '../../types/school';
 import { PortalLogin } from './PortalLogin';
 import { AdminSectionsManager } from './AdminSectionsManager';
+import { AdminEnrolledLearnersManager } from './AdminEnrolledLearnersManager';
 import { AdminAccountsManager } from './AdminAccountsManager';
 import { TeacherAdvisoryManager } from './TeacherAdvisoryManager';
 import { GoogleDriveBackupManager } from './GoogleDriveBackupManager';
@@ -105,7 +106,7 @@ export const PortalModal: React.FC<PortalModalProps> = ({
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
 
   // Admin Portal State
-  const [adminTab, setAdminTab] = useState<'sections' | 'curriculum' | 'applications' | 'accounts' | 'announcements' | 'database'>('sections');
+  const [adminTab, setAdminTab] = useState<'learners' | 'sections' | 'curriculum' | 'applications' | 'accounts' | 'announcements' | 'database'>('learners');
   const [newNoticeTitle, setNewNoticeTitle] = useState('');
   const [newNoticeCategory, setNewNoticeCategory] = useState<'Announcement' | 'Academic' | 'Activities' | 'Admissions'>('Announcement');
   const [newNoticeSummary, setNewNoticeSummary] = useState('');
@@ -1290,6 +1291,17 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                 {/* Admin Navigation Tabs */}
                 <div className="flex border-b border-slate-200 gap-1 sm:gap-2 pb-px overflow-x-auto">
                   <button
+                    onClick={() => setAdminTab('learners')}
+                    className={`px-3 sm:px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                      adminTab === 'learners'
+                        ? 'bg-white text-blue-900 border-t-2 border-t-blue-900 border-x border-slate-200 font-bold'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <GraduationCap className="w-3.5 h-3.5" />
+                    <span>Enrolled Learners ({students.length})</span>
+                  </button>
+                  <button
                     onClick={() => setAdminTab('sections')}
                     className={`px-3 sm:px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                       adminTab === 'sections'
@@ -1356,6 +1368,11 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                     <span>Database Backup</span>
                   </button>
                 </div>
+
+                {/* Subtab: Enrolled Learners Directory & Management */}
+                {adminTab === 'learners' && (
+                  <AdminEnrolledLearnersManager />
+                )}
 
                 {/* Subtab: Classes & Sections Manager */}
                 {adminTab === 'sections' && (
