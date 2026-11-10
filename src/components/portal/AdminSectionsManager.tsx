@@ -19,8 +19,10 @@ import {
   BookOpen,
   Lock,
   Key,
-  ShieldAlert
+  ShieldAlert,
+  Check
 } from 'lucide-react';
+import { APP_ASSETS } from '../../assets';
 import { schoolDb } from '../../services/schoolDatabase';
 import { 
   SchoolClassSection, 
@@ -73,6 +75,9 @@ export const AdminSectionsManager: React.FC = () => {
   const [showAddStudentModal, setShowAddStudentModal] = useState(false);
   const [studentAssignMode, setStudentAssignMode] = useState<'existing' | 'quick_new'>('existing');
   const [selectedStudentToAssign, setSelectedStudentToAssign] = useState<string>('');
+  const [unassignedSearchQuery, setUnassignedSearchQuery] = useState<string>('');
+  const [appliedSearchQuery, setAppliedSearchQuery] = useState<string>('');
+  const [onlyUnassignedFilter, setOnlyUnassignedFilter] = useState<boolean>(false);
   
   // Quick New Student Form
   const [quickFirstName, setQuickFirstName] = useState('');
@@ -348,6 +353,21 @@ export const AdminSectionsManager: React.FC = () => {
     return s.section !== activeRosterSection.sectionName && !activeRosterSection.studentIds?.includes(s.id);
   });
 
+  // Filter available students matching active search query & unassigned filter
+  const filteredAvailableToAssign = availableToAssign.filter(st => {
+    if (onlyUnassignedFilter && st.section) return false;
+    if (!appliedSearchQuery.trim()) return true;
+    const q = appliedSearchQuery.toLowerCase().trim();
+    return (
+      st.firstName.toLowerCase().includes(q) ||
+      st.lastName.toLowerCase().includes(q) ||
+      st.lrn.includes(q) ||
+      (!st.section && 'unassigned'.includes(q)) ||
+      (st.section && st.section.toLowerCase().includes(q)) ||
+      (st.barangay && st.barangay.toLowerCase().includes(q))
+    );
+  });
+
   return (
     <div className="space-y-6">
       
@@ -567,11 +587,49 @@ export const AdminSectionsManager: React.FC = () => {
       {/* SECTION ROSTER DRAWER / MODAL */}
       {/* ========================================================================= */}
       {activeRosterSection && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/75 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white rounded-2xl border border-slate-200 max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden my-auto animate-scale-up">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/75 backdrop-blur-xs overflow-y-auto print:static print:p-0 print:bg-white print:overflow-visible">
+          <div 
+            id="printable-roster-document" 
+            className="bg-white rounded-2xl border border-slate-200 max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden my-auto animate-scale-up print:border-none print:shadow-none print:max-h-none print:overflow-visible print:w-full print:m-0 print:rounded-none"
+          >
             
-            {/* Roster Header */}
-            <div className="bg-slate-900 text-white p-5 flex flex-wrap items-center justify-between gap-3 shrink-0">
+            {/* DepEd Official Letterhead (Print Only) */}
+            <div className="hidden print:flex items-center gap-4 border-b-2 border-slate-900 pb-3 mb-3 shrink-0">
+              <div className="w-14 h-14 shrink-0 rounded-full overflow-hidden flex items-center justify-center border border-slate-300 bg-blue-900">
+                <img
+                  src={APP_ASSETS.logo}
+                  alt="INHS Official Seal"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = APP_ASSETS.publicLogo;
+                  }}
+                  className="w-full h-full object-cover scale-[1.04] rounded-full"
+                />
+              </div>
+              <div className="flex-1">
+                <div className="text-[10px] uppercase font-bold text-blue-950 tracking-wider">
+                  Republic of the Philippines · Department of Education
+                </div>
+                <div className="text-[10px] text-slate-600 font-medium">
+                  Region IV-A CALABARZON · Division of Quezon · District of Infanta
+                </div>
+                <h2 className="text-base font-extrabold font-crest text-slate-900 leading-tight">
+                  INFANTA NATIONAL HIGH SCHOOL
+                </h2>
+                <div className="text-[10px] font-mono text-slate-700 flex flex-wrap gap-x-3">
+                  <span>School ID: <strong>301332</strong></span>
+                  <span>Track / Strand: <strong>{activeRosterSection.strand}</strong></span>
+                  <span>School Year: <strong>2026–2027</strong></span>
+                </div>
+              </div>
+              <div className="text-right text-[11px] font-mono border-l pl-3 border-slate-300">
+                <div className="font-bold text-sm text-slate-900">{activeRosterSection.sectionName}</div>
+                <div>Grade {activeRosterSection.gradeLevel} · Rm {activeRosterSection.roomNumber}</div>
+                <div className="text-slate-600">Adviser: {activeRosterSection.adviserName}</div>
+              </div>
+            </div>
+
+            {/* Roster Header (Screen View) */}
+            <div className="bg-slate-900 text-white p-5 flex flex-wrap items-center justify-between gap-3 shrink-0 print:hidden">
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] bg-blue-950 border border-blue-700 text-amber-300 px-2 py-0.5 rounded font-mono">
@@ -613,7 +671,7 @@ export const AdminSectionsManager: React.FC = () => {
             </div>
 
             {/* Roster Table Content */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 print:p-0 print:overflow-visible">
               <div className="flex items-center justify-between text-xs text-slate-500">
                 <span>
                   Showing <strong>{activeSectionStudents.length}</strong> enrolled learners ({activeSectionStudents.filter(s => s.gender === 'Male').length} Male, {activeSectionStudents.filter(s => s.gender === 'Female').length} Female)
@@ -623,9 +681,9 @@ export const AdminSectionsManager: React.FC = () => {
                 </span>
               </div>
 
-              <div className="rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+              <div className="rounded-xl border border-slate-200 overflow-hidden shadow-xs print:border-slate-300 print:shadow-none">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                  <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200 print:bg-slate-200 print:text-black">
                     <tr>
                       <th className="p-3 w-10">#</th>
                       <th className="p-3">Learner Reference Number (LRN)</th>
@@ -633,7 +691,7 @@ export const AdminSectionsManager: React.FC = () => {
                       <th className="p-3">Gender</th>
                       <th className="p-3">General Average</th>
                       <th className="p-3">Guardian & Contact</th>
-                      <th className="p-3 text-right no-print">Action</th>
+                      <th className="p-3 text-right no-print print:hidden">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 bg-white">
@@ -658,7 +716,7 @@ export const AdminSectionsManager: React.FC = () => {
                           <div>{st.guardianName}</div>
                           <div className="text-[11px] text-slate-400 font-mono-num">{st.contactNumber}</div>
                         </td>
-                        <td className="p-3 text-right no-print">
+                        <td className="p-3 text-right no-print print:hidden">
                           <button
                             onClick={() => handleRemoveStudent(st.id)}
                             className="text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-2 py-1 rounded text-[11px] font-semibold cursor-pointer transition-colors"
@@ -675,7 +733,7 @@ export const AdminSectionsManager: React.FC = () => {
                           <p>No learners currently enrolled in this section.</p>
                           <button
                             onClick={() => setShowAddStudentModal(true)}
-                            className="px-3 py-1.5 bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer inline-flex items-center gap-1.5"
+                            className="px-3 py-1.5 bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer inline-flex items-center gap-1.5 no-print print:hidden"
                           >
                             <UserPlus className="w-3.5 h-3.5" />
                             <span>Add Students Now</span>
@@ -686,10 +744,32 @@ export const AdminSectionsManager: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+
+              {/* Official DepEd Certification and Signatures (Print Only) */}
+              <div className="hidden print:grid grid-cols-2 gap-8 pt-8 text-xs text-center mt-6 break-inside-avoid">
+                <div>
+                  <div className="border-b border-black w-56 mx-auto pb-1 font-bold text-slate-900">
+                    {activeRosterSection.adviserName}
+                  </div>
+                  <div className="text-[10px] text-slate-600 mt-1 uppercase tracking-wider font-semibold">
+                    Class Adviser / Faculty In-Charge
+                  </div>
+                  <div className="text-[9px] text-slate-500 font-mono">Date Certified: {new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                </div>
+                <div>
+                  <div className="border-b border-black w-56 mx-auto pb-1 font-bold text-slate-900">
+                    Dr. Restituto M. Hernandez, EdD
+                  </div>
+                  <div className="text-[10px] text-slate-600 mt-1 uppercase tracking-wider font-semibold">
+                    Secondary School Principal IV
+                  </div>
+                  <div className="text-[9px] text-slate-500 font-mono">Official School Register (SF1 Compatible)</div>
+                </div>
+              </div>
             </div>
 
             {/* Modal Bottom Strip */}
-            <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
+            <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0 no-print print:hidden">
               <span>DepEd Form 1 (School Register) Standard Sync</span>
               <button
                 onClick={() => setActiveRosterSection(null)}
@@ -756,6 +836,159 @@ export const AdminSectionsManager: React.FC = () => {
             {/* Mode 1: Assign Existing Student */}
             {studentAssignMode === 'existing' && (
               <form onSubmit={handleAssignExistingStudent} className="space-y-4 text-xs">
+                {/* Search & Filter Toolbar for Unassigned / Available Students */}
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                      <Search className="w-3.5 h-3.5 text-blue-900" />
+                      <span>Search Unassigned & Registered Students</span>
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setOnlyUnassignedFilter(false)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer ${
+                          !onlyUnassignedFilter
+                            ? 'bg-blue-900 text-white'
+                            : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                        }`}
+                      >
+                        All ({availableToAssign.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOnlyUnassignedFilter(true)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer ${
+                          onlyUnassignedFilter
+                            ? 'bg-amber-600 text-white'
+                            : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                        }`}
+                      >
+                        Unassigned Only ({availableToAssign.filter(s => !s.section).length})
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-1.5">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={unassignedSearchQuery}
+                        onChange={(e) => setUnassignedSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            setAppliedSearchQuery(unassignedSearchQuery);
+                          }
+                        }}
+                        placeholder="Search by learner name, LRN, or barangay..."
+                        className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-1 focus:ring-blue-900"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAppliedSearchQuery(unassignedSearchQuery)}
+                      className="px-3 py-1.5 bg-blue-900 hover:bg-blue-800 text-white text-xs font-bold rounded-lg flex items-center gap-1 cursor-pointer transition-colors shrink-0 shadow-xs"
+                      title="Click to search students"
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                      <span>Search</span>
+                    </button>
+                    {(appliedSearchQuery || onlyUnassignedFilter) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUnassignedSearchQuery('');
+                          setAppliedSearchQuery('');
+                          setOnlyUnassignedFilter(false);
+                        }}
+                        className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg cursor-pointer transition-colors shrink-0"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Search Results Summary */}
+                  {appliedSearchQuery && (
+                    <div className="text-[11px] text-blue-950 font-medium">
+                      Found <strong>{filteredAvailableToAssign.length}</strong> matching student{filteredAvailableToAssign.length !== 1 ? 's' : ''} for "{appliedSearchQuery}"
+                    </div>
+                  )}
+
+                  {/* Quick-Select Cards (if filtered results exist) */}
+                  {filteredAvailableToAssign.length > 0 && (
+                    <div className="max-h-36 overflow-y-auto space-y-1.5 pt-1 pr-1">
+                      {filteredAvailableToAssign.slice(0, 10).map((st) => {
+                        const isSelected = selectedStudentToAssign === st.id;
+                        return (
+                          <div
+                            key={st.id}
+                            onClick={() => setSelectedStudentToAssign(st.id)}
+                            className={`p-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between text-left ${
+                              isSelected
+                                ? 'bg-blue-50 border-blue-600 ring-1 ring-blue-600'
+                                : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="space-y-0.5">
+                              <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                <span>{st.lastName}, {st.firstName}</span>
+                                <span className="font-mono text-[10px] text-slate-500 font-normal">({st.lrn})</span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 flex items-center gap-2">
+                                <span>{st.gender}</span>
+                                <span>·</span>
+                                <span className={st.section ? 'text-slate-600' : 'text-emerald-700 font-semibold'}>
+                                  {st.section ? `Current: ${st.section}` : '● Unassigned'}
+                                </span>
+                                {st.barangay && (
+                                  <>
+                                    <span>·</span>
+                                    <span>{st.barangay}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <div className="shrink-0 pl-2">
+                              {isSelected ? (
+                                <span className="w-5 h-5 rounded-full bg-blue-900 text-white flex items-center justify-center text-[10px]">
+                                  <Check className="w-3 h-3" />
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-blue-900 hover:underline font-semibold">Select</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {filteredAvailableToAssign.length > 10 && (
+                        <div className="text-[10px] text-center text-slate-400 py-0.5">
+                          Showing first 10 of {filteredAvailableToAssign.length} matches. Or choose from dropdown below.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {filteredAvailableToAssign.length === 0 && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] text-center space-y-1">
+                      <p>No students found matching your search criteria.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUnassignedSearchQuery('');
+                          setAppliedSearchQuery('');
+                          setOnlyUnassignedFilter(false);
+                        }}
+                        className="text-blue-900 underline font-semibold text-[10px] cursor-pointer"
+                      >
+                        Clear search filters
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
                     Select Learner to Enroll *
@@ -766,10 +999,10 @@ export const AdminSectionsManager: React.FC = () => {
                     onChange={(e) => setSelectedStudentToAssign(e.target.value)}
                     className="w-full p-2.5 rounded-lg border border-slate-300 bg-white font-medium"
                   >
-                    <option value="">-- Choose a student from database --</option>
-                    {availableToAssign.map(st => (
+                    <option value="">-- Choose a student from filtered list ({filteredAvailableToAssign.length}) --</option>
+                    {filteredAvailableToAssign.map(st => (
                       <option key={st.id} value={st.id}>
-                        {st.lastName}, {st.firstName} (LRN: {st.lrn}) — Currently: {st.section || 'Unassigned'}
+                        {st.lastName}, {st.firstName} (LRN: {st.lrn}) — {st.section ? `Current: ${st.section}` : 'Unassigned'}
                       </option>
                     ))}
                   </select>

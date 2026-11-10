@@ -18,8 +18,10 @@ import {
   Save,
   ChevronDown,
   Cloud,
-  Upload
+  Upload,
+  Check
 } from 'lucide-react';
+import { APP_ASSETS } from '../../assets';
 import { schoolDb } from '../../services/schoolDatabase';
 import { backupSectionSF1ToDrive, signInWithGoogle, getAccessToken } from '../../services/googleDriveService';
 import { 
@@ -59,6 +61,9 @@ export const TeacherAdvisoryManager: React.FC<TeacherAdvisoryManagerProps> = ({
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [enrollMode, setEnrollMode] = useState<'existing' | 'new'>('existing');
   const [selectedStudentToEnroll, setSelectedStudentToEnroll] = useState('');
+  const [unassignedSearchQuery, setUnassignedSearchQuery] = useState('');
+  const [appliedUnassignedSearch, setAppliedUnassignedSearch] = useState('');
+  const [onlyUnassignedFilter, setOnlyUnassignedFilter] = useState(false);
 
   // Editing student state
   const [editingStudent, setEditingStudent] = useState<StudentProfile | null>(null);
@@ -148,6 +153,21 @@ export const TeacherAdvisoryManager: React.FC<TeacherAdvisoryManagerProps> = ({
   const unassignedStudents = students.filter(s => {
     if (!currentSection) return false;
     return s.section !== currentSection.sectionName && !currentSection.studentIds?.includes(s.id);
+  });
+
+  // Filter unassigned students matching search and filter
+  const filteredUnassignedStudents = unassignedStudents.filter(st => {
+    if (onlyUnassignedFilter && st.section) return false;
+    if (!appliedUnassignedSearch.trim()) return true;
+    const q = appliedUnassignedSearch.toLowerCase().trim();
+    return (
+      st.firstName.toLowerCase().includes(q) ||
+      st.lastName.toLowerCase().includes(q) ||
+      st.lrn.includes(q) ||
+      (!st.section && 'unassigned'.includes(q)) ||
+      (st.section && st.section.toLowerCase().includes(q)) ||
+      (st.barangay && st.barangay.toLowerCase().includes(q))
+    );
   });
 
   // Filtered by search
@@ -392,9 +412,48 @@ export const TeacherAdvisoryManager: React.FC<TeacherAdvisoryManagerProps> = ({
       </div>
 
       {/* Roster Table & Search Toolbar */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden space-y-4 p-5">
+      <div 
+        id="printable-sf1-document" 
+        className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden space-y-4 p-5 print:p-0 print:border-none print:shadow-none print:overflow-visible"
+      >
+        {/* DepEd Official Letterhead (Print Only) */}
+        {currentSection && (
+          <div className="hidden print:flex items-center gap-4 border-b-2 border-slate-900 pb-3 mb-3 shrink-0">
+            <div className="w-14 h-14 shrink-0 rounded-full overflow-hidden flex items-center justify-center border border-slate-300 bg-blue-900">
+              <img
+                src={APP_ASSETS.logo}
+                alt="INHS Official Seal"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = APP_ASSETS.publicLogo;
+                }}
+                className="w-full h-full object-cover scale-[1.04] rounded-full"
+              />
+            </div>
+            <div className="flex-1">
+              <div className="text-[10px] uppercase font-bold text-blue-950 tracking-wider">
+                Republic of the Philippines · Department of Education
+              </div>
+              <div className="text-[10px] text-slate-600 font-medium">
+                Region IV-A CALABARZON · Division of Quezon · District of Infanta
+              </div>
+              <h2 className="text-base font-extrabold font-crest text-slate-900 leading-tight">
+                INFANTA NATIONAL HIGH SCHOOL
+              </h2>
+              <div className="text-[10px] font-mono text-slate-700 flex flex-wrap gap-x-3">
+                <span>School ID: <strong>301332</strong></span>
+                <span>School Form 1 (SF1) School Register</span>
+                <span>School Year: <strong>2026–2027</strong></span>
+              </div>
+            </div>
+            <div className="text-right text-[11px] font-mono border-l pl-3 border-slate-300">
+              <div className="font-bold text-sm text-slate-900">{currentSection.sectionName}</div>
+              <div>Grade {currentSection.gradeLevel} · {currentSection.strand}</div>
+              <div className="text-slate-600">Adviser: {currentTeacher.name}</div>
+            </div>
+          </div>
+        )}
         
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3 print:hidden">
           <div className="flex items-center gap-2">
             <h4 className="text-sm sm:text-base font-bold text-slate-900">
               Official Class Roster ({displayedStudents.length} Learners)
@@ -449,7 +508,7 @@ export const TeacherAdvisoryManager: React.FC<TeacherAdvisoryManagerProps> = ({
                 <th className="p-3">Age / Birth Date</th>
                 <th className="p-3">Address & Guardian</th>
                 <th className="p-3">Adviser Remarks</th>
-                <th className="p-3 text-right no-print">Actions</th>
+                <th className="p-3 text-right no-print print:hidden">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -493,7 +552,7 @@ export const TeacherAdvisoryManager: React.FC<TeacherAdvisoryManagerProps> = ({
                     <span className="line-clamp-2">{st.adviserRemarks || 'No remarks recorded.'}</span>
                   </td>
 
-                  <td className="p-3 text-right no-print">
+                  <td className="p-3 text-right no-print print:hidden">
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => handleStartEdit(st)}
@@ -511,14 +570,6 @@ export const TeacherAdvisoryManager: React.FC<TeacherAdvisoryManagerProps> = ({
                       >
                         <UserMinus className="w-3.5 h-3.5" />
                       </button>
-
-                      <button
-                        onClick={() => handleDeleteStudent(st)}
-                        className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded cursor-pointer transition-colors"
-                        title="Permanently delete learner record"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
                     </div>
                   </td>
                 </tr>
@@ -531,7 +582,7 @@ export const TeacherAdvisoryManager: React.FC<TeacherAdvisoryManagerProps> = ({
                     <p>No students found matching your criteria.</p>
                     <button
                       onClick={() => setShowEnrollModal(true)}
-                      className="px-3 py-1.5 bg-emerald-800 text-white text-xs font-bold rounded-lg cursor-pointer"
+                      className="px-3 py-1.5 bg-emerald-800 text-white text-xs font-bold rounded-lg cursor-pointer no-print print:hidden"
                     >
                       Enroll Students into {currentSection?.sectionName}
                     </button>
@@ -540,6 +591,28 @@ export const TeacherAdvisoryManager: React.FC<TeacherAdvisoryManagerProps> = ({
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Official DepEd Certification and Signatures (Print Only) */}
+        <div className="hidden print:grid grid-cols-2 gap-8 pt-8 text-xs text-center mt-6 break-inside-avoid">
+          <div>
+            <div className="border-b border-black w-56 mx-auto pb-1 font-bold text-slate-900">
+              {currentTeacher.name}
+            </div>
+            <div className="text-[10px] text-slate-600 mt-1 uppercase tracking-wider font-semibold">
+              Class Adviser ({currentSection?.sectionName})
+            </div>
+            <div className="text-[9px] text-slate-500 font-mono">Date Certified: {new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+          </div>
+          <div>
+            <div className="border-b border-black w-56 mx-auto pb-1 font-bold text-slate-900">
+              Dr. Restituto M. Hernandez, EdD
+            </div>
+            <div className="text-[10px] text-slate-600 mt-1 uppercase tracking-wider font-semibold">
+              Secondary School Principal IV
+            </div>
+            <div className="text-[9px] text-slate-500 font-mono">Official School Register (SF1 Compatible)</div>
+          </div>
         </div>
 
       </div>
@@ -597,6 +670,159 @@ export const TeacherAdvisoryManager: React.FC<TeacherAdvisoryManagerProps> = ({
             {/* Sub-mode A: Select existing student */}
             {enrollMode === 'existing' && (
               <form onSubmit={handleEnrollExisting} className="space-y-4 text-xs">
+                {/* Search & Filter Toolbar for Unassigned Students */}
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                      <Search className="w-3.5 h-3.5 text-emerald-800" />
+                      <span>Search Unassigned & Registered Learners</span>
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setOnlyUnassignedFilter(false)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer ${
+                          !onlyUnassignedFilter
+                            ? 'bg-emerald-800 text-white'
+                            : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                        }`}
+                      >
+                        All ({unassignedStudents.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOnlyUnassignedFilter(true)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer ${
+                          onlyUnassignedFilter
+                            ? 'bg-amber-600 text-white'
+                            : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                        }`}
+                      >
+                        Unassigned Only ({unassignedStudents.filter(s => !s.section).length})
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-1.5">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={unassignedSearchQuery}
+                        onChange={(e) => setUnassignedSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            setAppliedUnassignedSearch(unassignedSearchQuery);
+                          }
+                        }}
+                        placeholder="Search by learner name, LRN, or barangay..."
+                        className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-700"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAppliedUnassignedSearch(unassignedSearchQuery)}
+                      className="px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center gap-1 cursor-pointer transition-colors shrink-0 shadow-xs"
+                      title="Click to search learners"
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                      <span>Search</span>
+                    </button>
+                    {(appliedUnassignedSearch || onlyUnassignedFilter) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUnassignedSearchQuery('');
+                          setAppliedUnassignedSearch('');
+                          setOnlyUnassignedFilter(false);
+                        }}
+                        className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg cursor-pointer transition-colors shrink-0"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Search Results Summary */}
+                  {appliedUnassignedSearch && (
+                    <div className="text-[11px] text-emerald-900 font-medium">
+                      Found <strong>{filteredUnassignedStudents.length}</strong> matching learner{filteredUnassignedStudents.length !== 1 ? 's' : ''} for "{appliedUnassignedSearch}"
+                    </div>
+                  )}
+
+                  {/* Quick-Select Cards (if filtered results exist) */}
+                  {filteredUnassignedStudents.length > 0 && (
+                    <div className="max-h-36 overflow-y-auto space-y-1.5 pt-1 pr-1">
+                      {filteredUnassignedStudents.slice(0, 10).map((st) => {
+                        const isSelected = selectedStudentToEnroll === st.id;
+                        return (
+                          <div
+                            key={st.id}
+                            onClick={() => setSelectedStudentToEnroll(st.id)}
+                            className={`p-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between text-left ${
+                              isSelected
+                                ? 'bg-emerald-50 border-emerald-600 ring-1 ring-emerald-600'
+                                : 'bg-white border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="space-y-0.5">
+                              <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                <span>{st.lastName}, {st.firstName}</span>
+                                <span className="font-mono text-[10px] text-slate-500 font-normal">({st.lrn})</span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 flex items-center gap-2">
+                                <span>{st.gender}</span>
+                                <span>·</span>
+                                <span className={st.section ? 'text-slate-600' : 'text-emerald-700 font-semibold'}>
+                                  {st.section ? `Current: ${st.section}` : '● Unassigned'}
+                                </span>
+                                {st.barangay && (
+                                  <>
+                                    <span>·</span>
+                                    <span>{st.barangay}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <div className="shrink-0 pl-2">
+                              {isSelected ? (
+                                <span className="w-5 h-5 rounded-full bg-emerald-800 text-white flex items-center justify-center text-[10px]">
+                                  <Check className="w-3 h-3" />
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-emerald-800 hover:underline font-semibold">Select</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {filteredUnassignedStudents.length > 10 && (
+                        <div className="text-[10px] text-center text-slate-400 py-0.5">
+                          Showing first 10 of {filteredUnassignedStudents.length} matches. Or choose from dropdown below.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {filteredUnassignedStudents.length === 0 && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] text-center space-y-1">
+                      <p>No unassigned learners found matching your search criteria.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUnassignedSearchQuery('');
+                          setAppliedUnassignedSearch('');
+                          setOnlyUnassignedFilter(false);
+                        }}
+                        className="text-emerald-800 underline font-semibold text-[10px] cursor-pointer"
+                      >
+                        Clear search filters
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
                     Select Learner to Enroll *
@@ -607,10 +833,10 @@ export const TeacherAdvisoryManager: React.FC<TeacherAdvisoryManagerProps> = ({
                     onChange={(e) => setSelectedStudentToEnroll(e.target.value)}
                     className="w-full p-2.5 rounded-lg border border-slate-300 bg-white font-medium"
                   >
-                    <option value="">-- Choose student from database --</option>
-                    {unassignedStudents.map(st => (
+                    <option value="">-- Choose student from filtered list ({filteredUnassignedStudents.length}) --</option>
+                    {filteredUnassignedStudents.map(st => (
                       <option key={st.id} value={st.id}>
-                        {st.lastName}, {st.firstName} (LRN: {st.lrn}) — Status: {st.section || 'Unassigned'}
+                        {st.lastName}, {st.firstName} (LRN: {st.lrn}) — {st.section ? `Current: ${st.section}` : 'Unassigned'}
                       </option>
                     ))}
                   </select>
