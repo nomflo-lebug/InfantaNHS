@@ -26,7 +26,18 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   return (
     <section className="relative overflow-hidden bg-slate-900 text-white">
       {/* Background Home Wallpaper: Infanta National High School Fighting Roosters */}
-      <div className="absolute inset-0 z-0 bg-slate-950 overflow-hidden">
+      <div className="absolute inset-0 z-0 bg-slate-950 overflow-hidden flex items-center justify-center">
+        {/* Ambient backdrop to seamlessly match the arena colors across any screen width */}
+        <img
+          src={APP_ASSETS.homeWallpaper}
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).src = APP_ASSETS.publicHomeWallpaper;
+          }}
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full object-cover object-center filter blur-3xl opacity-40 scale-105"
+        />
+        {/* The entire wallpaper fitted 100% with zero cropping */}
         <img
           src={APP_ASSETS.homeWallpaper}
           onError={(e) => {
@@ -35,11 +46,11 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           alt="Infanta National High School - Home of the Fighting Roosters"
           loading="eager"
           decoding="async"
-          className="w-full h-full object-cover object-center filter brightness-90 contrast-105"
+          className="relative w-full h-full object-contain object-center filter brightness-95 contrast-105"
         />
-        {/* Balanced scrim: deep contrast for text on the left, clear visibility for the fiery rooster emblem on the right */}
-        <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-950/70 to-slate-950/45" />
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-slate-950/50" />
+        {/* Soft scrim for text readability */}
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-950/85 via-slate-950/40 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/50 via-transparent to-slate-950/30 pointer-events-none" />
       </div>
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-8 py-10 sm:py-12 lg:py-14">
@@ -111,7 +122,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           </div>
 
           {/* Quick Access Card */}
-          <div className="lg:col-span-4 bg-slate-900/90 backdrop-blur-md rounded-xl border border-slate-700/80 p-6 shadow-2xl space-y-4">
+          <div className="lg:col-span-4 bg-slate-900/75 backdrop-blur-md rounded-xl border border-slate-700/60 p-6 shadow-2xl space-y-4">
             <div className="border-b border-slate-800 pb-3">
               <div className="text-xs uppercase tracking-wider text-amber-400 font-semibold">Portals & Quick Actions</div>
               <h2 className="text-lg font-bold text-white mt-1">Student Academic Hub</h2>
