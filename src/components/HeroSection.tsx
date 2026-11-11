@@ -10,6 +10,7 @@ import {
   Sparkles,
   BookOpenCheck
 } from 'lucide-react';
+import { APP_ASSETS } from '../assets';
 
 interface HeroSectionProps {
   onNavigate: (sectionId: string) => void;
@@ -24,16 +25,21 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 }) => {
   return (
     <section className="relative overflow-hidden bg-slate-900 text-white">
-      {/* Background Campus Facade with Scrim */}
-      <div className="absolute inset-0 z-0 bg-slate-950">
+      {/* Background Home Wallpaper: Infanta National High School Fighting Roosters */}
+      <div className="absolute inset-0 z-0 bg-slate-950 overflow-hidden">
         <img
-          src="/assets/images/school_campus_facade_1793804196290.jpg"
-          alt="Infanta National High School Campus"
+          src={APP_ASSETS.homeWallpaper}
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).src = APP_ASSETS.publicHomeWallpaper;
+          }}
+          alt="Infanta National High School - Home of the Fighting Roosters"
           loading="eager"
           decoding="async"
-          className="w-full h-full object-cover object-center scale-105 filter brightness-75 contrast-105"
+          className="w-full h-full object-cover object-center filter brightness-90 contrast-105"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-slate-950/95 via-slate-950/85 to-blue-950/60" />
+        {/* Balanced scrim: deep contrast for text on the left, clear visibility for the fiery rooster emblem on the right */}
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-950/70 to-slate-950/45" />
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-slate-950/50" />
       </div>
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-8 py-10 sm:py-12 lg:py-14">
