@@ -21,7 +21,9 @@ import {
   Mail,
   MapPin,
   BookOpen,
-  ArrowRight
+  ArrowRight,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { schoolDb } from '../../services/schoolDatabase';
 import { GradeLevel, StrandType, EnrollmentApplication, INFANTA_BARANGAYS } from '../../types/school';
@@ -70,6 +72,44 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
   // Status search state
   const [searchQuery, setSearchQuery] = useState('');
   const [searchedApp, setSearchedApp] = useState<EnrollmentApplication | null | 'not_found'>(null);
+
+  // Fullscreen view state for desktop
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  const portalRef = React.useRef<HTMLDivElement>(null);
+
+  const toggleFullScreen = () => {
+    setIsFullScreen(prev => {
+      const next = !prev;
+      if (next) {
+        if (portalRef.current && portalRef.current.requestFullscreen && !document.fullscreenElement) {
+          portalRef.current.requestFullscreen().catch(() => {});
+        }
+      } else {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleClose = () => {
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+    setIsFullScreen(false);
+    onClose();
+  };
+
+  React.useEffect(() => {
+    const handleFsChange = () => {
+      if (!document.fullscreenElement && isFullScreen) {
+        setIsFullScreen(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, [isFullScreen]);
 
   if (!isOpen) return null;
 
@@ -145,8 +185,15 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
-      <div className="bg-white w-full max-w-5xl h-[95vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
+    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md animate-fade-in ${isFullScreen ? 'p-0 overflow-hidden' : 'p-2 sm:p-4 overflow-y-auto'}`}>
+      <div 
+        ref={portalRef}
+        className={`bg-white shadow-2xl flex flex-col overflow-hidden transition-all duration-200 ${
+          isFullScreen 
+            ? 'fixed inset-0 w-screen h-screen max-w-none max-h-none rounded-none border-0 m-0 z-50' 
+            : 'w-full max-w-5xl h-[95vh] rounded-2xl border border-slate-200 my-auto'
+        }`}
+      >
         
         {/* Portal Header */}
         <div className="bg-gradient-to-r from-blue-950 via-blue-900 to-indigo-950 text-white px-5 py-4 border-b border-blue-900/50 flex items-center justify-between shadow-md shrink-0">
@@ -217,10 +264,31 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
               </button>
             </div>
 
+            {/* Desktop Fullscreen Toggle Button */}
             <button
-              onClick={onClose}
+              type="button"
+              onClick={toggleFullScreen}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-900/80 hover:bg-blue-800 text-blue-100 border border-blue-700/60 transition-colors cursor-pointer shadow-xs"
+              title={isFullScreen ? "Exit Full Screen view (Restore window)" : "Open Online Enrollment Portal in Full Screen for desktop viewing"}
+            >
+              {isFullScreen ? (
+                <>
+                  <Minimize2 className="w-3.5 h-3.5 text-amber-300" />
+                  <span className="hidden lg:inline">Exit Full Screen</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-3.5 h-3.5 text-amber-300" />
+                  <span className="hidden lg:inline">Full Screen</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={handleClose}
               className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
               aria-label="Close Online Enrollment Portal"
+              title="Close Portal"
             >
               <X className="w-5 h-5" />
             </button>

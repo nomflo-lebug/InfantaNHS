@@ -22,7 +22,9 @@ import {
   Building2,
   Users,
   Key,
-  HelpCircle
+  HelpCircle,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { schoolDb, calculateSubjectFinal, calculateGeneralAverage } from '../../services/schoolDatabase';
 import { 
@@ -131,6 +133,44 @@ export const PortalModal: React.FC<PortalModalProps> = ({
     const unsub = schoolDb.subscribe(sync);
     return () => unsub();
   }, []);
+
+  // Fullscreen view state for desktop
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  const portalRef = React.useRef<HTMLDivElement>(null);
+
+  const toggleFullScreen = () => {
+    setIsFullScreen(prev => {
+      const next = !prev;
+      if (next) {
+        if (portalRef.current && portalRef.current.requestFullscreen && !document.fullscreenElement) {
+          portalRef.current.requestFullscreen().catch(() => {});
+        }
+      } else {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleClose = () => {
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+    setIsFullScreen(false);
+    onClose();
+  };
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      if (!document.fullscreenElement && isFullScreen) {
+        setIsFullScreen(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, [isFullScreen]);
 
   // Sync initial role when modal opens & reset student view for privacy
   useEffect(() => {
@@ -286,8 +326,15 @@ export const PortalModal: React.FC<PortalModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
-      <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-6xl max-h-[94vh] flex flex-col shadow-2xl overflow-hidden my-auto">
+    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-sm ${isFullScreen ? 'p-0 overflow-hidden' : 'p-2 sm:p-4 overflow-y-auto'}`}>
+      <div 
+        ref={portalRef}
+        className={`bg-white flex flex-col shadow-2xl overflow-hidden transition-all duration-200 ${
+          isFullScreen 
+            ? 'fixed inset-0 w-screen h-screen max-w-none max-h-none rounded-none border-0 m-0 z-50' 
+            : 'w-full max-w-6xl max-h-[94vh] rounded-2xl border border-slate-200 my-auto'
+        }`}
+      >
         
         {/* Top Header of Portal */}
         <div className="bg-slate-900 text-white px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 shrink-0">
@@ -377,10 +424,31 @@ export const PortalModal: React.FC<PortalModalProps> = ({
               </div>
             )}
 
+            {/* Desktop Fullscreen Toggle Button */}
             <button
-              onClick={onClose}
+              type="button"
+              onClick={toggleFullScreen}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 hover:border-slate-500 transition-all cursor-pointer shadow-xs"
+              title={isFullScreen ? "Exit Full Screen view (Restore window)" : "Open School Portal in Full Screen for desktop viewing"}
+            >
+              {isFullScreen ? (
+                <>
+                  <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Exit Full Screen</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Full Screen</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={handleClose}
               className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
               aria-label="Close Portal"
+              title="Close Portal"
             >
               <X className="w-5 h-5" />
             </button>
@@ -1586,13 +1654,41 @@ export const PortalModal: React.FC<PortalModalProps> = ({
 
         {/* Modal Footer */}
         <div className="bg-slate-100 px-5 py-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
-          <span>Infanta National High School · Student Information & Academic Grading Engine</span>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-semibold cursor-pointer"
-          >
-            Close Portal View
-          </button>
+          <div className="flex items-center gap-3">
+            <span>Infanta National High School · Student Information & Academic Grading Engine</span>
+            {isFullScreen && (
+              <span className="hidden md:inline-flex items-center gap-1.5 text-[11px] bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded-full font-semibold border border-blue-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></span>
+                Desktop Full Screen Active
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleFullScreen}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg font-semibold cursor-pointer transition-colors"
+              title={isFullScreen ? "Restore to default window size" : "Expand to Full Screen"}
+            >
+              {isFullScreen ? (
+                <>
+                  <Minimize2 className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Restore Window</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Full Screen</span>
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleClose}
+              className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-semibold cursor-pointer transition-colors"
+            >
+              Close Portal View
+            </button>
+          </div>
         </div>
 
       </div>
