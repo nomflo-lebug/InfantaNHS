@@ -235,7 +235,8 @@ export type AccountRole = 'admin' | 'teacher' | 'student';
 export interface UserAccount {
   id: string;
   username: string; // e.g., 'Admin'
-  password: string; // e.g., 'Inhs67890'
+  password?: string; // Deprecated: migrated automatically to passwordHash
+  passwordHash?: string; // PBKDF2-SHA256 cryptographic hash (pbkdf2_sha256$...)
   role: AccountRole;
   fullName: string;
   designation: string; // e.g., 'System Administrator', 'Head Teacher'
@@ -243,6 +244,8 @@ export interface UserAccount {
   phone?: string;
   teacherId?: string; // links to Teacher profile if role === 'teacher'
   createdAt: string;
+  lastLoginAt?: string;
+  mustChangePassword?: boolean;
   isPrimaryAdmin?: boolean; // prevents deleting main Admin
 }
 

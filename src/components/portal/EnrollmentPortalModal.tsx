@@ -28,6 +28,7 @@ import {
 import { schoolDb } from '../../services/schoolDatabase';
 import { GradeLevel, StrandType, EnrollmentApplication, INFANTA_BARANGAYS } from '../../types/school';
 import { APP_ASSETS } from '../../assets';
+import { checkRateLimit, recordFailedAttempt, resetRateLimit, sanitizeText } from '../../utils/security';
 
 interface EnrollmentPortalModalProps {
   isOpen: boolean;
@@ -68,10 +69,12 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
   // Submission state
   const [submittedApp, setSubmittedApp] = useState<EnrollmentApplication | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Status search state
   const [searchQuery, setSearchQuery] = useState('');
   const [searchedApp, setSearchedApp] = useState<EnrollmentApplication | null | 'not_found'>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   // Fullscreen view state for desktop
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -115,8 +118,9 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
 
   const handleEnrollmentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!firstName.trim() || !lastName.trim() || !contactNumber.trim() || !guardianName.trim()) {
-      alert('Please fill out all required student and guardian information.');
+      setFormError('Please fill out all required student and guardian information.');
       return;
     }
 
@@ -157,17 +161,34 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
 
   const handleStatusSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return;
+    setStatusError(null);
+    const rateStatus = checkRateLimit('enrollment_lookup');
+    if (!rateStatus.allowed) {
+      setSearchedApp(null);
+      setStatusError(`Too many lookup attempts. Please wait ${rateStatus.retryAfterSeconds}s before trying again.`);
+      return;
+    }
+
+    const query = sanitizeText(searchQuery, 60).toLowerCase();
+    if (!query || query.length < 4) {
+      setStatusError('Please enter your full Application Reference Code (e.g. app-2026-001) or 12-digit LRN.');
+      return;
+    }
 
     const allApps = schoolDb.getEnrollmentApplications();
-    const found = allApps.find(a => 
-      a.id.toLowerCase() === query || 
-      (a.lrn && a.lrn.toLowerCase() === query) ||
-      `${a.firstName} ${a.lastName}`.toLowerCase().includes(query)
+    // Exact match only on Application Reference ID or LRN (prevents name enumeration & PII leaks)
+    const found = allApps.find(a =>
+      a.id.toLowerCase() === query ||
+      (a.lrn && a.lrn.toLowerCase() === query)
     );
 
-    setSearchedApp(found || 'not_found');
+    if (found) {
+      resetRateLimit('enrollment_lookup');
+      setSearchedApp(found);
+    } else {
+      recordFailedAttempt('enrollment_lookup');
+      setSearchedApp('not_found');
+    }
   };
 
   const handleResetForm = () => {
@@ -763,6 +784,13 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
                     </div>
                   </div>
 
+                  {formError && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{formError}</span>
+                    </div>
+                  )}
+
                   {/* Submission Buttons */}
                   <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-slate-100">
                     <div className="text-xs text-slate-500">
@@ -799,7 +827,7 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
                     Track Enrollment Application Status
                   </h4>
                   <p className="text-xs text-slate-500">
-                    Enter your Application Reference Code (e.g. <strong className="font-mono">app-2026-001</strong>), LRN, or Learner Full Name.
+                    For learner privacy (RA 10173), enter your exact Application Reference Code (e.g. <strong className="font-mono">app-2026-001</strong>) or 12-digit LRN.
                   </p>
                 </div>
 
@@ -809,8 +837,8 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
                     required
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Enter Reference Code or Student Name..."
-                    className="flex-1 p-2.5 text-xs sm:text-sm rounded-lg border border-slate-300 focus:border-blue-900 focus:outline-hidden font-medium"
+                    placeholder="Enter Reference Code or 12-digit LRN..."
+                    className="flex-1 p-2.5 text-xs sm:text-sm rounded-lg border border-slate-300 focus:border-blue-900 focus:outline-hidden font-medium font-mono"
                   />
                   <button
                     type="submit"
@@ -819,12 +847,18 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
                     Track Status
                   </button>
                 </form>
+                {statusError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{statusError}</span>
+                  </div>
+                )}
               </div>
 
               {searchedApp === 'not_found' && (
                 <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
-                  <span>No matching enrollment application was found for "{searchQuery}". Please verify your reference code or contact the Registrar.</span>
+                  <span>No matching enrollment application was found for "{searchQuery}". Please verify your exact reference code or 12-digit LRN.</span>
                 </div>
               )}
 

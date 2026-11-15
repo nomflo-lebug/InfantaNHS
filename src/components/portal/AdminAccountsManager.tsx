@@ -9,16 +9,17 @@ import {
   CheckCircle, 
   AlertCircle, 
   Search, 
-  Eye, 
-  EyeOff, 
   Copy, 
   Check, 
-  Sparkles,
   Lock,
-  GraduationCap
+  GraduationCap,
+  ShieldAlert,
+  Activity,
+  AlertTriangle
 } from 'lucide-react';
 import { schoolDb } from '../../services/schoolDatabase';
 import { UserAccount, AccountRole } from '../../types/school';
+import { validatePasswordStrength, SecurityAuditEntry } from '../../utils/security';
 
 interface AdminAccountsManagerProps {
   currentUser: UserAccount;
@@ -26,34 +27,37 @@ interface AdminAccountsManagerProps {
 
 export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ currentUser }) => {
   const [accounts, setAccounts] = useState<UserAccount[]>(schoolDb.getAccounts());
+  const [securityLogs, setSecurityLogs] = useState<SecurityAuditEntry[]>(schoolDb.getSecurityLogs());
   const [roleFilter, setRoleFilter] = useState<'All' | AccountRole>('All');
   const [searchQuery, setSearchQuery] = useState('');
   
   // Create Modal State
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newUsername, setNewUsername] = useState('');
-  const [newPassword, setNewPassword] = useState('Inhs2026!');
+  const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<AccountRole>('teacher');
   const [newFullName, setNewFullName] = useState('');
   const [newDesignation, setNewDesignation] = useState('Teacher I');
   const [newDepartment, setNewDepartment] = useState('Science & Mathematics');
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Feedback alerts
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
-  // Password visibility state map
-  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Password reset modal state
   const [resetModalAccount, setResetModalAccount] = useState<UserAccount | null>(null);
   const [resetNewPassword, setResetNewPassword] = useState('');
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [showAuditLog, setShowAuditLog] = useState(true);
 
   const refreshAccounts = () => {
     setAccounts(schoolDb.getAccounts());
+    setSecurityLogs(schoolDb.getSecurityLogs());
   };
 
   useEffect(() => {
@@ -61,21 +65,17 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
     return () => unsub();
   }, []);
 
-  const togglePasswordVisibility = (id: string) => {
-    setVisiblePasswords(prev => ({
-      ...prev,
-      [id]: !prev[id]
-    }));
-  };
-
-  const handleCopyCredentials = (acc: UserAccount) => {
-    const text = `INHS Portal Credentials\nUsername: ${acc.username}\nPassword: ${acc.password}\nRole: ${acc.role.toUpperCase()}`;
+  const handleCopyUsername = (acc: UserAccount) => {
+    const text = `INHS Portal Account\nUsername: ${acc.username}\nRole: ${acc.role.toUpperCase()}`;
     navigator.clipboard.writeText(text);
     setCopiedId(acc.id);
     setTimeout(() => setCopiedId(null), 2500);
   };
 
-  const handleCreateAccount = (e: React.FormEvent) => {
+  const newPasswordCheck = validatePasswordStrength(newPassword);
+  const resetPasswordCheck = validatePasswordStrength(resetNewPassword);
+
+  const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -84,19 +84,31 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
       return;
     }
 
+    if (!newPasswordCheck.valid) {
+      setErrorMessage(newPasswordCheck.errors[0] || 'Password does not meet security policy.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
     const finalDesignation = newRole === 'admin'
       ? (newDesignation.trim() || 'Administrative Officer')
       : `${newDesignation.trim() || 'Teacher I'} (${newDepartment})`;
 
-    const res = schoolDb.createAccount({
-      username: newUsername.trim(),
-      password: newPassword.trim(),
-      role: newRole,
-      fullName: newFullName.trim(),
-      designation: finalDesignation,
-      email: newEmail.trim() || undefined,
-      phone: newPhone.trim() || undefined,
-    });
+    const res = await schoolDb.createAccountAsync(
+      {
+        username: newUsername.trim(),
+        password: newPassword.trim(),
+        role: newRole,
+        fullName: newFullName.trim(),
+        designation: finalDesignation,
+        email: newEmail.trim() || undefined,
+        phone: newPhone.trim() || undefined,
+      },
+      currentUser.username
+    );
+
+    setIsSubmitting(false);
 
     if (!res.success) {
       setErrorMessage(res.error || 'Failed to create account.');
@@ -104,15 +116,15 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
     }
 
     const successMsg = newRole === 'teacher'
-      ? `Success! Account created for "${newFullName.trim()}". The teacher/adviser has been officially added to the database and can now be assigned to advisory classes and gradebooks!`
-      : `Administrator account for "${newFullName.trim()}" (Username: @${newUsername.trim()}) created successfully!`;
+      ? `Success! Account created for "${newFullName.trim()}" with PBKDF2-SHA256 credential protection.`
+      : `Administrator account for "${newFullName.trim()}" (@${newUsername.trim()}) created securely!`;
 
     setSuccessMessage(successMsg);
     setTimeout(() => setSuccessMessage(null), 5000);
 
     // Reset form
     setNewUsername('');
-    setNewPassword('Inhs2026!');
+    setNewPassword('');
     setNewFullName('');
     setNewDesignation('Teacher I');
     setNewDepartment('Science & Mathematics');
@@ -124,32 +136,47 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
 
   const handleDeleteAccount = (acc: UserAccount) => {
     if (acc.isPrimaryAdmin || acc.username.toLowerCase() === 'admin') {
-      alert('The primary Admin account cannot be deleted.');
+      setErrorMessage('The primary Admin account cannot be deleted.');
       return;
     }
 
     if (confirm(`Are you sure you want to permanently delete account "${acc.username}" (${acc.fullName})?`)) {
-      const res = schoolDb.deleteAccount(acc.id);
+      const res = schoolDb.deleteAccount(acc.id, currentUser.username);
       if (res.success) {
         setSuccessMessage(`Account "${acc.username}" has been removed.`);
         setTimeout(() => setSuccessMessage(null), 3000);
         refreshAccounts();
       } else {
-        alert(res.error || 'Failed to delete account.');
+        setErrorMessage(res.error || 'Failed to delete account.');
       }
     }
   };
 
-  const handleResetPasswordSubmit = (e: React.FormEvent) => {
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setResetError(null);
     if (!resetModalAccount || !resetNewPassword.trim()) return;
 
-    schoolDb.updateAccount(resetModalAccount.id, {
-      password: resetNewPassword.trim()
-    });
+    if (!resetPasswordCheck.valid) {
+      setResetError(resetPasswordCheck.errors[0] || 'Password does not meet security requirements.');
+      return;
+    }
 
-    setSuccessMessage(`Password for "${resetModalAccount.username}" has been updated.`);
-    setTimeout(() => setSuccessMessage(null), 3000);
+    setIsSubmitting(true);
+    const res = await schoolDb.resetAccountPasswordAsync(
+      resetModalAccount.id,
+      resetNewPassword.trim(),
+      currentUser.username
+    );
+    setIsSubmitting(false);
+
+    if (!res.success) {
+      setResetError(res.error || 'Failed to update password.');
+      return;
+    }
+
+    setSuccessMessage(`Password for "@${resetModalAccount.username}" has been securely hashed and updated.`);
+    setTimeout(() => setSuccessMessage(null), 3500);
     setResetModalAccount(null);
     setResetNewPassword('');
     refreshAccounts();
@@ -170,6 +197,43 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
     return true;
   });
 
+  const defaultPassAccountsCount = accounts.filter(a => a.mustChangePassword).length;
+
+  const renderStrengthMeter = (check: ReturnType<typeof validatePasswordStrength>, value: string) => {
+    if (!value) return null;
+    const barColors = ['bg-rose-600', 'bg-rose-500', 'bg-amber-500', 'bg-blue-600', 'bg-emerald-600'];
+    const textColors = ['text-rose-700', 'text-rose-700', 'text-amber-700', 'text-blue-800', 'text-emerald-700'];
+
+    return (
+      <div className="mt-2 space-y-1.5">
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-slate-500 font-medium">Password Strength:</span>
+          <span className={`font-bold ${textColors[check.score]}`}>{check.label}</span>
+        </div>
+        <div className="grid grid-cols-4 gap-1 h-1.5">
+          {[1, 2, 3, 4].map((level) => (
+            <div
+              key={level}
+              className={`rounded-full transition-colors ${
+                check.score >= level ? barColors[check.score] : 'bg-slate-200'
+              }`}
+            />
+          ))}
+        </div>
+        {check.errors.length > 0 && (
+          <ul className="text-[10px] text-slate-600 space-y-0.5 pt-0.5">
+            {check.errors.map((err, i) => (
+              <li key={i} className="flex items-center gap-1">
+                <span className="text-amber-600">•</span>
+                <span>{err}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       
@@ -178,17 +242,17 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-blue-900">
-              Administrative Control Center
+              Administrative Security Center
             </span>
-            <span className="text-[10px] bg-blue-100 text-blue-900 font-bold px-2 py-0.5 rounded-full">
-              Full System Access
+            <span className="text-[10px] bg-emerald-100 text-emerald-900 font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+              PBKDF2-SHA256 Protected
             </span>
           </div>
           <h3 className="text-xl sm:text-2xl font-bold font-crest text-slate-900 mt-0.5">
-            User Accounts & Security Permissions
+            User Accounts & Security Governance
           </h3>
           <p className="text-xs text-slate-500">
-            Provision, manage, and reset login credentials for school administrators, subject coordinators, and teachers.
+            Provision accounts with cryptographic password hashing, enforce strong credentials, and monitor portal security audit logs.
           </p>
         </div>
 
@@ -196,6 +260,7 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
           onClick={() => {
             setShowCreateModal(true);
             setErrorMessage(null);
+            setNewPassword('');
           }}
           className="px-4 py-2.5 bg-blue-900 hover:bg-blue-800 active:bg-blue-950 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-2 cursor-pointer transition-colors shrink-0"
         >
@@ -203,6 +268,19 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
           <span>Create New User Account</span>
         </button>
       </div>
+
+      {/* Default Credential Advisory */}
+      {defaultPassAccountsCount > 0 && (
+        <div className="p-3.5 bg-amber-50 border border-amber-300 text-amber-950 text-xs rounded-xl flex items-start gap-2.5">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-amber-700 mt-0.5" />
+          <div>
+            <div className="font-bold">Security Recommendation: Rotate Initial Credentials</div>
+            <p className="text-[11px] text-amber-900 mt-0.5">
+              {defaultPassAccountsCount} account(s) are still using initial setup credentials. Use the <strong>Reset</strong> button below to assign strong custom passwords.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Success / Error Banners */}
       {successMessage && (
@@ -212,12 +290,19 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
         </div>
       )}
 
+      {errorMessage && !showCreateModal && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium rounded-xl flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
+
       {/* Account Overview Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-1">
           <div className="text-[11px] font-bold text-slate-500 uppercase">Total User Accounts</div>
           <div className="text-2xl font-bold font-mono-num text-slate-900">{accounts.length}</div>
-          <div className="text-[10px] text-slate-400">Registered INHS Accounts</div>
+          <div className="text-[10px] text-slate-400">Zero Plaintext Credentials</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-1">
@@ -233,13 +318,13 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
           <div className="text-2xl font-bold font-mono-num text-emerald-700">
             {accounts.filter(a => a.role === 'teacher').length}
           </div>
-          <div className="text-[10px] text-slate-400">Class & Grade Encoders</div>
+          <div className="text-[10px] text-slate-400">Scoped Class Encoders</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-1">
-          <div className="text-[11px] font-bold text-amber-700 uppercase">Current Session</div>
-          <div className="text-sm font-bold text-slate-900 truncate">{currentUser.fullName}</div>
-          <div className="text-[10px] text-amber-600 font-mono">@{currentUser.username} (Admin)</div>
+          <div className="text-[11px] font-bold text-amber-700 uppercase">Audit Events Recorded</div>
+          <div className="text-2xl font-bold font-mono-num text-slate-900">{securityLogs.length}</div>
+          <div className="text-[10px] text-emerald-700 font-semibold">15m Idle Auto-Lock Active</div>
         </div>
       </div>
 
@@ -284,7 +369,7 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
                 <th className="p-3.5">User Identity & Name</th>
                 <th className="p-3.5">Username</th>
                 <th className="p-3.5">Role</th>
-                <th className="p-3.5">Password</th>
+                <th className="p-3.5">Credential Security</th>
                 <th className="p-3.5">Contact Details</th>
                 <th className="p-3.5 text-right">Actions</th>
               </tr>
@@ -293,7 +378,6 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
               {filteredAccounts.map((acc) => {
                 const isCurrent = acc.id === currentUser.id;
                 const isPrimary = acc.isPrimaryAdmin || acc.username.toLowerCase() === 'admin';
-                const isPasswordShown = !!visiblePasswords[acc.id];
 
                 return (
                   <tr key={acc.id} className="hover:bg-slate-50 transition-colors">
@@ -322,9 +406,9 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
                       <div className="font-mono font-semibold text-blue-950 bg-slate-100 px-2 py-1 rounded inline-flex items-center gap-1.5">
                         <span>@{acc.username}</span>
                         <button
-                          onClick={() => handleCopyCredentials(acc)}
+                          onClick={() => handleCopyUsername(acc)}
                           className="text-slate-400 hover:text-blue-900 cursor-pointer"
-                          title="Copy login credentials"
+                          title="Copy username & role"
                         >
                           {copiedId === acc.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                         </button>
@@ -343,17 +427,16 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
                     </td>
 
                     <td className="p-3.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-slate-700 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
-                          {isPasswordShown ? acc.password : '••••••••'}
+                      <div className="flex flex-col gap-1">
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded w-fit">
+                          <Lock className="w-3 h-3 text-emerald-700" />
+                          <span>PBKDF2-SHA256 Hashed</span>
                         </span>
-                        <button
-                          onClick={() => togglePasswordVisibility(acc.id)}
-                          className="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer"
-                          title={isPasswordShown ? "Hide password" : "Show password"}
-                        >
-                          {isPasswordShown ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                        </button>
+                        {acc.mustChangePassword && (
+                          <span className="text-[10px] text-amber-700 font-semibold">
+                            Rotation recommended
+                          </span>
+                        )}
                       </div>
                     </td>
 
@@ -367,10 +450,11 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
                         <button
                           onClick={() => {
                             setResetModalAccount(acc);
-                            setResetNewPassword(acc.password);
+                            setResetNewPassword('');
+                            setResetError(null);
                           }}
                           className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-semibold text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
-                          title="Change password"
+                          title="Set a new password"
                         >
                           <Key className="w-3 h-3" />
                           <span>Reset</span>
@@ -406,10 +490,64 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
         </div>
       </div>
 
+      {/* Security Audit Log */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+        <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-blue-900" />
+            <div>
+              <h4 className="text-sm font-bold text-slate-900">Portal Security Audit Trail</h4>
+              <p className="text-[11px] text-slate-500">Real-time monitoring of sign-ins, failed attempts, lockouts, and credential updates.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowAuditLog(!showAuditLog)}
+            className="text-xs font-semibold text-blue-900 hover:underline cursor-pointer"
+          >
+            {showAuditLog ? 'Hide Log' : 'Show Log'}
+          </button>
+        </div>
+
+        {showAuditLog && (
+          <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 text-xs">
+            {securityLogs.length === 0 ? (
+              <div className="p-6 text-center text-slate-400">No security audit events recorded yet.</div>
+            ) : (
+              securityLogs.slice(0, 30).map((entry) => (
+                <div key={entry.id} className="px-4 py-2.5 flex items-start justify-between gap-3 hover:bg-slate-50">
+                  <div className="flex items-start gap-2.5">
+                    {entry.severity === 'critical' ? (
+                      <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    ) : entry.severity === 'warning' ? (
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <div className="font-semibold text-slate-900 flex items-center gap-2">
+                        <span className="font-mono text-[11px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-800">
+                          {entry.event}
+                        </span>
+                        <span>@{entry.actor}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-600 mt-0.5">{entry.details}</div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                    {new Date(entry.timestamp).toLocaleString()}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
       {/* CREATE NEW ACCOUNT MODAL */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full p-6 shadow-2xl space-y-4 animate-scale-up">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full p-6 shadow-2xl space-y-4 animate-scale-up max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-blue-900 text-amber-300 flex items-center justify-center">
@@ -422,7 +560,7 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
               </div>
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="text-slate-400 hover:text-slate-700 text-sm font-bold"
+                className="text-slate-400 hover:text-slate-700 text-sm font-bold cursor-pointer"
               >
                 ✕
               </button>
@@ -544,16 +682,18 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Initial Password *</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Strong Initial Password *</label>
                   <input
-                    type="text"
+                    type="password"
                     required
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Min. 8 chars (A-z, 0-9, !@#)"
                     className="w-full p-2.5 rounded-lg border border-slate-300 focus:border-blue-900 focus:outline-hidden font-mono font-semibold"
                   />
+                  {renderStrengthMeter(newPasswordCheck, newPassword)}
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Contact Phone</label>
@@ -588,9 +728,10 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-blue-900 hover:bg-blue-800 text-white rounded-lg font-bold shadow-sm cursor-pointer"
+                  disabled={isSubmitting || !newPasswordCheck.valid}
+                  className="px-5 py-2 bg-blue-900 hover:bg-blue-800 text-white rounded-lg font-bold shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Create Account
+                  {isSubmitting ? 'Hashing & Creating...' : 'Create Secure Account'}
                 </button>
               </div>
             </form>
@@ -607,38 +748,48 @@ export const AdminAccountsManager: React.FC<AdminAccountsManagerProps> = ({ curr
                 <Key className="w-4 h-4 text-amber-500" />
                 <span>Reset User Password</span>
               </h4>
-              <button onClick={() => setResetModalAccount(null)} className="text-slate-400 hover:text-slate-700">✕</button>
+              <button onClick={() => setResetModalAccount(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">✕</button>
             </div>
 
             <p className="text-xs text-slate-600">
-              Set a new password for account <strong>@{resetModalAccount.username}</strong> ({resetModalAccount.fullName}).
+              Assign a new strong password for account <strong>@{resetModalAccount.username}</strong> ({resetModalAccount.fullName}). Existing hashes cannot be viewed.
             </p>
+
+            {resetError && (
+              <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-[11px] text-rose-700 flex items-center gap-2">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{resetError}</span>
+              </div>
+            )}
 
             <form onSubmit={handleResetPasswordSubmit} className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">New Password *</label>
+                <label className="block font-semibold text-slate-700 mb-1">New Strong Password *</label>
                 <input
-                  type="text"
+                  type="password"
                   required
                   value={resetNewPassword}
                   onChange={(e) => setResetNewPassword(e.target.value)}
-                  className="w-full p-2.5 rounded-lg border border-slate-300 font-mono font-semibold"
+                  placeholder="Min. 8 chars (A-z, 0-9, !@#)"
+                  className="w-full p-2.5 rounded-lg border border-slate-300 font-mono font-semibold focus:border-blue-900 focus:outline-hidden"
                 />
+                {renderStrengthMeter(resetPasswordCheck, resetNewPassword)}
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setResetModalAccount(null)}
-                  className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg font-semibold"
+                  className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-blue-900 text-white rounded-lg font-bold"
+                  disabled={isSubmitting || !resetPasswordCheck.valid}
+                  className="px-4 py-1.5 bg-blue-900 text-white rounded-lg font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Save New Password
+                  {isSubmitting ? 'Updating...' : 'Save New Password'}
                 </button>
               </div>
             </form>

@@ -20,6 +20,22 @@ import {
   GradeLevel,
   TermSemester
 } from '../types/school';
+import {
+  hashPassword,
+  verifyPassword,
+  isPasswordHashed,
+  validatePasswordStrength,
+  checkRateLimit,
+  recordFailedAttempt,
+  resetRateLimit,
+  sanitizeUserForSession,
+  sanitizeText,
+  sanitizeLrn,
+  sanitizeEmail,
+  sanitizePhone,
+  sanitizeJsonPayload,
+  SecurityAuditEntry,
+} from '../utils/security';
 
 const DB_KEY = 'inhs_school_database_v5';
 
@@ -32,6 +48,7 @@ interface DatabaseSchema {
   activities: SchoolActivity[];
   accounts: UserAccount[];
   sections: SchoolClassSection[];
+  securityLogs?: SecurityAuditEntry[];
 }
 
 const DEFAULT_ATTENDANCE: AttendanceMonth[] = [
@@ -653,6 +670,7 @@ const INITIAL_ACCOUNTS: UserAccount[] = [
     email: 'admin@inhs.deped.gov.ph',
     phone: '(042) 535-2144',
     createdAt: '2026-06-01',
+    mustChangePassword: true,
     isPrimaryAdmin: true,
   },
   {
@@ -666,6 +684,7 @@ const INITIAL_ACCOUNTS: UserAccount[] = [
     phone: '0917-889-1240',
     teacherId: 't-101',
     createdAt: '2026-06-01',
+    mustChangePassword: true,
   },
   {
     id: 'acc-t2',
@@ -678,6 +697,7 @@ const INITIAL_ACCOUNTS: UserAccount[] = [
     phone: '0920-554-9981',
     teacherId: 't-102',
     createdAt: '2026-06-01',
+    mustChangePassword: true,
   },
   {
     id: 'acc-t3',
@@ -690,6 +710,7 @@ const INITIAL_ACCOUNTS: UserAccount[] = [
     phone: '0918-344-7721',
     teacherId: 't-103',
     createdAt: '2026-06-01',
+    mustChangePassword: true,
   },
   {
     id: 'acc-t4',
@@ -702,6 +723,7 @@ const INITIAL_ACCOUNTS: UserAccount[] = [
     phone: '0922-910-3345',
     teacherId: 't-104',
     createdAt: '2026-06-01',
+    mustChangePassword: true,
   },
 ];
 
@@ -815,9 +837,28 @@ const INITIAL_SECTIONS: SchoolClassSection[] = [
 class SchoolDatabaseService {
   private data: DatabaseSchema;
   private listeners: (() => void)[] = [];
+  private migrationPromise: Promise<void>;
 
   constructor() {
     this.data = this.loadFromStorage();
+    this.migrationPromise = this.migratePlaintextCredentials();
+  }
+
+  private async migratePlaintextCredentials(): Promise<void> {
+    let changed = false;
+    for (const acc of this.data.accounts) {
+      if (acc.password && !isPasswordHashed(acc.passwordHash)) {
+        acc.passwordHash = await hashPassword(acc.password);
+        delete acc.password;
+        changed = true;
+      } else if (acc.password && isPasswordHashed(acc.passwordHash)) {
+        delete acc.password;
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.persist(this.data);
+    }
   }
 
   private loadFromStorage(): DatabaseSchema {
@@ -828,20 +869,28 @@ class SchoolDatabaseService {
         localStorage.getItem('inhs_school_database_v3') || 
         localStorage.getItem('inhs_school_database_v1');
       if (stored) {
-        const parsed: DatabaseSchema = JSON.parse(stored);
+        const rawParsed = JSON.parse(stored);
+        const parsed = sanitizeJsonPayload<DatabaseSchema>(rawParsed);
         
-        // Ensure accounts exist and Admin has Username: Admin and Password: Inhs67890
+        // Ensure primary Admin account exists without ever overwriting an updated password
         if (!parsed.accounts || !Array.isArray(parsed.accounts) || parsed.accounts.length === 0) {
-          parsed.accounts = INITIAL_ACCOUNTS;
+          parsed.accounts = INITIAL_ACCOUNTS.map(a => ({ ...a }));
         } else {
           const adminIdx = parsed.accounts.findIndex(a => a.username.toLowerCase() === 'admin');
           if (adminIdx === -1) {
-            parsed.accounts.unshift(INITIAL_ACCOUNTS[0]);
+            parsed.accounts.unshift({ ...INITIAL_ACCOUNTS[0] });
           } else {
-            parsed.accounts[adminIdx].password = 'Inhs67890';
             parsed.accounts[adminIdx].role = 'admin';
             parsed.accounts[adminIdx].isPrimaryAdmin = true;
+            if (!parsed.accounts[adminIdx].passwordHash && !parsed.accounts[adminIdx].password) {
+              parsed.accounts[adminIdx].password = 'Inhs67890';
+              parsed.accounts[adminIdx].mustChangePassword = true;
+            }
           }
+        }
+
+        if (!Array.isArray(parsed.securityLogs)) {
+          parsed.securityLogs = [];
         }
 
         // Ensure sections exist
@@ -932,8 +981,9 @@ class SchoolDatabaseService {
       enrollmentApplications: INITIAL_APPLICATIONS,
       updates: INITIAL_UPDATES,
       activities: INITIAL_ACTIVITIES,
-      accounts: INITIAL_ACCOUNTS,
+      accounts: INITIAL_ACCOUNTS.map(a => ({ ...a })),
       sections: INITIAL_SECTIONS,
+      securityLogs: [],
     };
     this.persist(initial);
     return initial;
@@ -1086,6 +1136,18 @@ class SchoolDatabaseService {
   public submitEnrollmentApplication(app: Omit<EnrollmentApplication, 'id' | 'submissionDate' | 'status'>): EnrollmentApplication {
     const newApp: EnrollmentApplication = {
       ...app,
+      lrn: app.lrn ? sanitizeLrn(app.lrn) : undefined,
+      firstName: sanitizeText(app.firstName, 80),
+      middleName: sanitizeText(app.middleName, 80),
+      lastName: sanitizeText(app.lastName, 80),
+      extensionName: app.extensionName ? sanitizeText(app.extensionName, 20) : undefined,
+      email: sanitizeEmail(app.email),
+      contactNumber: sanitizePhone(app.contactNumber),
+      addressBarangay: sanitizeText(app.addressBarangay, 160),
+      previousSchool: sanitizeText(app.previousSchool, 160) || 'Not specified',
+      guardianName: sanitizeText(app.guardianName, 120),
+      guardianContact: sanitizePhone(app.guardianContact),
+      notes: app.notes ? sanitizeText(app.notes, 400) : undefined,
       id: `app-${Date.now().toString().slice(-6)}`,
       submissionDate: new Date().toISOString().split('T')[0],
       status: 'Pending Review',
@@ -1342,6 +1404,11 @@ class SchoolDatabaseService {
   public addSchoolUpdate(update: Omit<SchoolUpdate, 'id'>): SchoolUpdate {
     const newUpdate: SchoolUpdate = {
       ...update,
+      title: sanitizeText(update.title, 180),
+      author: sanitizeText(update.author, 120),
+      summary: sanitizeText(update.summary, 300),
+      content: sanitizeText(update.content, 4000),
+      tag: sanitizeText(update.tag, 60),
       id: `upd-${Date.now().toString().slice(-6)}`,
     };
     this.data.updates.unshift(newUpdate);
@@ -1366,6 +1433,11 @@ class SchoolDatabaseService {
   public addSchoolActivity(activity: Omit<SchoolActivity, 'id'>): SchoolActivity {
     const newAct: SchoolActivity = {
       ...activity,
+      title: sanitizeText(activity.title, 180),
+      date: sanitizeText(activity.date, 60),
+      time: sanitizeText(activity.time, 60),
+      venue: sanitizeText(activity.venue, 160),
+      description: sanitizeText(activity.description, 1000),
       id: `act-${Date.now().toString().slice(-6)}`,
     };
     this.data.activities.push(newAct);
@@ -1373,38 +1445,162 @@ class SchoolDatabaseService {
     return newAct;
   }
 
+  // --- Security Audit Logging ---
+  public getSecurityLogs(): SecurityAuditEntry[] {
+    return [...(this.data.securityLogs || [])];
+  }
+
+  public logSecurityEvent(
+    event: SecurityAuditEntry['event'],
+    actor: string,
+    details: string,
+    severity: SecurityAuditEntry['severity'] = 'info'
+  ): void {
+    if (!this.data.securityLogs) this.data.securityLogs = [];
+    const entry: SecurityAuditEntry = {
+      id: `sec-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: new Date().toISOString(),
+      event,
+      actor: sanitizeText(actor, 80) || 'anonymous',
+      details: sanitizeText(details, 300),
+      severity,
+    };
+    this.data.securityLogs.unshift(entry);
+    if (this.data.securityLogs.length > 200) {
+      this.data.securityLogs = this.data.securityLogs.slice(0, 200);
+    }
+    this.persist(this.data);
+  }
+
   // --- User Accounts & Authentication ---
   public getAccounts(): UserAccount[] {
-    return [...this.data.accounts];
+    // Strip sensitive password / passwordHash before returning accounts to UI components
+    return this.data.accounts.map(acc => sanitizeUserForSession(acc) as UserAccount);
   }
 
-  public authenticate(username: string, password: string): UserAccount | null {
-    const cleanUser = username.trim().toLowerCase();
+  public async authenticateAsync(
+    username: string,
+    password: string
+  ): Promise<{
+    user: UserAccount | null;
+    error?: string;
+    remainingAttempts?: number;
+    lockedSeconds?: number;
+  }> {
+    await this.migrationPromise;
+
+    const cleanUser = sanitizeText(username, 80).toLowerCase();
     const cleanPass = password.trim();
+    if (!cleanUser || !cleanPass) {
+      return { user: null, error: 'Username and password are required.' };
+    }
+
+    const rateScope = `login:${cleanUser}`;
+    const rateStatus = checkRateLimit(rateScope);
+    if (!rateStatus.allowed) {
+      this.logSecurityEvent(
+        'ACCOUNT_LOCKED',
+        cleanUser,
+        `Blocked login attempt during active cooldown (${rateStatus.retryAfterSeconds}s remaining).`,
+        'warning'
+      );
+      return {
+        user: null,
+        error: `Too many failed sign-in attempts. Account temporarily locked for ${rateStatus.retryAfterSeconds}s.`,
+        lockedSeconds: rateStatus.retryAfterSeconds,
+      };
+    }
+
     const account = this.data.accounts.find(
-      a => a.username.trim().toLowerCase() === cleanUser && a.password.trim() === cleanPass
+      a => a.username.trim().toLowerCase() === cleanUser
     );
-    return account ? { ...account } : null;
+
+    const storedCredential = account?.passwordHash || account?.password || '';
+    const isValid = account ? await verifyPassword(cleanPass, storedCredential) : false;
+
+    if (!account || !isValid) {
+      const failStatus = recordFailedAttempt(rateScope);
+      if (!failStatus.allowed) {
+        this.logSecurityEvent(
+          'ACCOUNT_LOCKED',
+          cleanUser,
+          `Account locked after repeated invalid password attempts (${failStatus.retryAfterSeconds}s cooldown).`,
+          'critical'
+        );
+        return {
+          user: null,
+          error: `Too many failed attempts. Sign-in locked for ${failStatus.retryAfterSeconds}s for security.`,
+          lockedSeconds: failStatus.retryAfterSeconds,
+        };
+      }
+      this.logSecurityEvent(
+        'LOGIN_FAILED',
+        cleanUser,
+        `Invalid credentials provided (${failStatus.remainingAttempts} attempts remaining before lockout).`,
+        'warning'
+      );
+      return {
+        user: null,
+        error: `Invalid username or password. ${failStatus.remainingAttempts} attempt(s) remaining before temporary lockout.`,
+        remainingAttempts: failStatus.remainingAttempts,
+      };
+    }
+
+    // Upgrade legacy plaintext account on successful login if needed
+    if (!account.passwordHash || account.password) {
+      account.passwordHash = await hashPassword(cleanPass);
+      delete account.password;
+    }
+
+    resetRateLimit(rateScope);
+    account.lastLoginAt = new Date().toISOString();
+    this.logSecurityEvent(
+      'LOGIN_SUCCESS',
+      account.username,
+      `Authenticated ${account.role.toUpperCase()} session started.`,
+      'info'
+    );
+
+    return { user: sanitizeUserForSession(account) as UserAccount };
   }
 
-  public createAccount(account: Omit<UserAccount, 'id' | 'createdAt'>): { success: boolean; account?: UserAccount; error?: string } {
-    const cleanUser = account.username.trim();
-    if (!cleanUser) {
-      return { success: false, error: 'Username cannot be empty.' };
+  public async createAccountAsync(
+    account: Omit<UserAccount, 'id' | 'createdAt' | 'passwordHash'> & { password: string },
+    actorUsername: string = 'Admin'
+  ): Promise<{ success: boolean; account?: UserAccount; error?: string }> {
+    await this.migrationPromise;
+
+    const cleanUser = sanitizeText(account.username, 60).replace(/\s+/g, '');
+    if (!cleanUser || cleanUser.length < 3) {
+      return { success: false, error: 'Username must be at least 3 non-space characters.' };
     }
-    if (!account.password || account.password.length < 4) {
-      return { success: false, error: 'Password must be at least 4 characters long.' };
+    const policy = validatePasswordStrength(account.password || '');
+    if (!policy.valid) {
+      return { success: false, error: `Weak password: ${policy.errors[0]}` };
     }
     const exists = this.data.accounts.some(a => a.username.toLowerCase() === cleanUser.toLowerCase());
     if (exists) {
       return { success: false, error: `Account with username "${cleanUser}" already exists.` };
     }
 
+    const passwordHash = await hashPassword(account.password.trim());
+    const cleanFullName = sanitizeText(account.fullName, 120);
+    const cleanDesignation = sanitizeText(account.designation, 120);
+    const cleanEmail = account.email ? sanitizeEmail(account.email) : undefined;
+    const cleanPhone = account.phone ? sanitizePhone(account.phone) : undefined;
+
     const newAccount: UserAccount = {
-      ...account,
       id: `acc-${Date.now().toString().slice(-6)}`,
       username: cleanUser,
+      passwordHash,
+      role: account.role,
+      fullName: cleanFullName,
+      designation: cleanDesignation,
+      email: cleanEmail || undefined,
+      phone: cleanPhone || undefined,
+      teacherId: account.teacherId,
       createdAt: new Date().toISOString().split('T')[0],
+      mustChangePassword: false,
       isPrimaryAdmin: false,
     };
 
@@ -1447,23 +1643,62 @@ class SchoolDatabaseService {
     }
 
     this.data.accounts.unshift(newAccount);
-    this.persist(this.data);
-    return { success: true, account: newAccount };
+    this.logSecurityEvent(
+      'ACCOUNT_CREATED',
+      actorUsername,
+      `Provisioned ${newAccount.role.toUpperCase()} account @${newAccount.username} (${newAccount.fullName}).`,
+      'info'
+    );
+    return { success: true, account: sanitizeUserForSession(newAccount) as UserAccount };
+  }
+
+  public async resetAccountPasswordAsync(
+    id: string,
+    newPassword: string,
+    actorUsername: string = 'Admin'
+  ): Promise<{ success: boolean; error?: string }> {
+    await this.migrationPromise;
+    const acc = this.data.accounts.find(a => a.id === id);
+    if (!acc) return { success: false, error: 'Account not found.' };
+
+    const policy = validatePasswordStrength(newPassword || '');
+    if (!policy.valid) {
+      return { success: false, error: policy.errors[0] };
+    }
+
+    acc.passwordHash = await hashPassword(newPassword.trim());
+    delete acc.password;
+    acc.mustChangePassword = false;
+
+    this.logSecurityEvent(
+      'PASSWORD_CHANGED',
+      actorUsername,
+      `Updated PBKDF2-SHA256 credentials for @${acc.username}.`,
+      'info'
+    );
+    return { success: true };
   }
 
   public updateAccount(id: string, updates: Partial<UserAccount>): boolean {
     const acc = this.data.accounts.find(a => a.id === id);
     if (!acc) return false;
-    Object.assign(acc, updates);
+
+    // Prevent direct plaintext password mutation or privilege tampering through generic updates
+    const safeUpdates = { ...updates };
+    delete safeUpdates.password;
+    delete safeUpdates.passwordHash;
+    delete safeUpdates.isPrimaryAdmin;
+
+    Object.assign(acc, safeUpdates);
 
     // If teacher account, keep the associated teacher profile in sync
     if (acc.role === 'teacher' && acc.teacherId) {
       const teacher = this.data.teachers.find(t => t.id === acc.teacherId);
       if (teacher) {
-        if (updates.fullName) teacher.name = updates.fullName;
-        if (updates.designation) teacher.title = updates.designation;
-        if (updates.email) teacher.email = updates.email;
-        if (updates.phone) teacher.phone = updates.phone;
+        if (safeUpdates.fullName) teacher.name = sanitizeText(safeUpdates.fullName, 120);
+        if (safeUpdates.designation) teacher.title = sanitizeText(safeUpdates.designation, 120);
+        if (safeUpdates.email) teacher.email = sanitizeEmail(safeUpdates.email);
+        if (safeUpdates.phone) teacher.phone = sanitizePhone(safeUpdates.phone);
       }
     }
 
@@ -1471,7 +1706,7 @@ class SchoolDatabaseService {
     return true;
   }
 
-  public deleteAccount(id: string): { success: boolean; error?: string } {
+  public deleteAccount(id: string, actorUsername: string = 'Admin'): { success: boolean; error?: string } {
     const acc = this.data.accounts.find(a => a.id === id);
     if (!acc) return { success: false, error: 'Account not found.' };
     if (acc.isPrimaryAdmin || acc.username.toLowerCase() === 'admin') {
@@ -1484,14 +1719,60 @@ class SchoolDatabaseService {
     }
 
     this.data.accounts = this.data.accounts.filter(a => a.id !== id);
-    this.persist(this.data);
+    this.logSecurityEvent(
+      'ACCOUNT_DELETED',
+      actorUsername,
+      `Deleted account @${acc.username} (${acc.fullName}).`,
+      'warning'
+    );
     return { success: true };
   }
 
-  public verifyAdminPassword(password: string): boolean {
-    const adminAcc = this.data.accounts.find(a => a.username.toLowerCase() === 'admin');
-    const expectedPassword = adminAcc?.password || 'Inhs67890';
-    return password.trim() === expectedPassword.trim();
+  public async verifyAdminPasswordAsync(
+    password: string,
+    actorUsername: string = 'Admin'
+  ): Promise<{ verified: boolean; error?: string; lockedSeconds?: number }> {
+    await this.migrationPromise;
+
+    const rateScope = 'admin_verify';
+    const rateStatus = checkRateLimit(rateScope);
+    if (!rateStatus.allowed) {
+      return {
+        verified: false,
+        error: `Too many failed admin password checks. Locked for ${rateStatus.retryAfterSeconds}s.`,
+        lockedSeconds: rateStatus.retryAfterSeconds,
+      };
+    }
+
+    const adminAccounts = this.data.accounts.filter(a => a.role === 'admin');
+    for (const adminAcc of adminAccounts) {
+      const stored = adminAcc.passwordHash || adminAcc.password || '';
+      if (stored && (await verifyPassword(password, stored))) {
+        resetRateLimit(rateScope);
+        this.logSecurityEvent(
+          'ADMIN_ACTION_VERIFIED',
+          actorUsername,
+          'High-privilege administrative action authorized.',
+          'info'
+        );
+        return { verified: true };
+      }
+    }
+
+    const failStatus = recordFailedAttempt(rateScope);
+    this.logSecurityEvent(
+      'ADMIN_ACTION_DENIED',
+      actorUsername,
+      'Failed admin password authorization check.',
+      'warning'
+    );
+    return {
+      verified: false,
+      error: failStatus.allowed
+        ? `Authentication failed: Incorrect Admin password (${failStatus.remainingAttempts} attempts left).`
+        : `Too many failed attempts. Locked for ${failStatus.retryAfterSeconds}s.`,
+      lockedSeconds: failStatus.retryAfterSeconds || undefined,
+    };
   }
 
   // --- Classes & Sections ---
@@ -1627,34 +1908,93 @@ class SchoolDatabaseService {
   }
 
   // --- Maintenance & Backup ---
-  public resetToDefault(): void {
+  public resetToDefault(actorUsername: string = 'Admin'): void {
     this.data = {
       students: INITIAL_STUDENTS,
       teachers: INITIAL_TEACHERS,
       enrollmentApplications: INITIAL_APPLICATIONS,
       updates: INITIAL_UPDATES,
       activities: INITIAL_ACTIVITIES,
-      accounts: INITIAL_ACCOUNTS,
+      accounts: INITIAL_ACCOUNTS.map(a => ({ ...a })),
       sections: INITIAL_SECTIONS,
       curriculumSubjects: INITIAL_CURRICULUM_SUBJECTS,
+      securityLogs: this.data.securityLogs || [],
     };
-    this.persist(this.data);
+    this.logSecurityEvent(
+      'DATABASE_RESET',
+      actorUsername,
+      'Restored database to factory default seed state.',
+      'critical'
+    );
+    this.migrationPromise = this.migratePlaintextCredentials();
   }
 
-  public exportDatabaseJson(): string {
-    return JSON.stringify(this.data, null, 2);
+  public exportDatabaseJson(actorUsername: string = 'Admin'): string {
+    // Redact credential secrets / password hashes from exported backups
+    const sanitizedExport: DatabaseSchema = {
+      ...this.data,
+      accounts: this.data.accounts.map(acc => sanitizeUserForSession(acc) as UserAccount),
+    };
+    this.logSecurityEvent(
+      'DATABASE_EXPORT',
+      actorUsername,
+      'Exported sanitized JSON database snapshot (credentials redacted).',
+      'info'
+    );
+    return JSON.stringify(sanitizedExport, null, 2);
   }
 
-  public importDatabaseJson(jsonString: string): boolean {
+  public importDatabaseJson(jsonString: string, actorUsername: string = 'Admin'): boolean {
     try {
-      const parsed = JSON.parse(jsonString);
-      if (parsed.students && Array.isArray(parsed.students)) {
-        this.data = parsed;
-        this.persist(this.data);
+      if (!jsonString || jsonString.length > 5_000_000) {
+        throw new Error('Backup file exceeds maximum safe import size (5MB).');
+      }
+      const raw = JSON.parse(jsonString);
+      const parsed = sanitizeJsonPayload<DatabaseSchema>(raw);
+      if (
+        parsed &&
+        Array.isArray(parsed.students) &&
+        Array.isArray(parsed.teachers) &&
+        Array.isArray(parsed.sections)
+      ) {
+        // Preserve existing hashed authentication credentials if backup redacted them
+        const mergedAccounts =
+          Array.isArray(parsed.accounts) && parsed.accounts.length > 0
+            ? parsed.accounts.map(importedAcc => {
+                const existing = this.data.accounts.find(a => a.id === importedAcc.id || a.username === importedAcc.username);
+                return {
+                  ...importedAcc,
+                  passwordHash: importedAcc.passwordHash || existing?.passwordHash,
+                };
+              })
+            : this.data.accounts;
+
+        this.data = {
+          students: parsed.students,
+          teachers: parsed.teachers,
+          curriculumSubjects: Array.isArray(parsed.curriculumSubjects)
+            ? parsed.curriculumSubjects
+            : this.data.curriculumSubjects,
+          enrollmentApplications: Array.isArray(parsed.enrollmentApplications)
+            ? parsed.enrollmentApplications
+            : this.data.enrollmentApplications,
+          updates: Array.isArray(parsed.updates) ? parsed.updates : this.data.updates,
+          activities: Array.isArray(parsed.activities) ? parsed.activities : this.data.activities,
+          accounts: mergedAccounts,
+          sections: parsed.sections,
+          securityLogs: this.data.securityLogs || [],
+        };
+        this.logSecurityEvent(
+          'DATABASE_IMPORT',
+          actorUsername,
+          'Imported validated database JSON backup.',
+          'warning'
+        );
+        this.migrationPromise = this.migratePlaintextCredentials();
         return true;
       }
     } catch (e) {
-      console.error('Failed to parse imported database JSON', e);
+      console.error('Failed to parse or validate imported database JSON', e);
     }
     return false;
   }

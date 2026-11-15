@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ShieldCheck, BookOpen, Lock, User, Eye, EyeOff, AlertCircle, KeyRound } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShieldCheck, BookOpen, Lock, User, Eye, EyeOff, AlertCircle, KeyRound, Clock } from 'lucide-react';
 import { schoolDb } from '../../services/schoolDatabase';
 import { UserAccount, Role } from '../../types/school';
 
@@ -18,33 +18,57 @@ export const PortalLogin: React.FC<PortalLoginProps> = ({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [lockoutSeconds, setLockoutSeconds] = useState<number>(0);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setLockoutSeconds((prev) => {
+        if (prev <= 1) {
+          setErrorMessage(null);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutSeconds]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (lockoutSeconds > 0 || loading) return;
+
     setErrorMessage(null);
     setLoading(true);
 
-    setTimeout(() => {
-      const user = schoolDb.authenticate(username, password);
+    try {
+      const result = await schoolDb.authenticateAsync(username, password);
 
-      if (!user) {
-        setErrorMessage('Invalid username or password. Please verify your DepEd credentials.');
+      if (!result.user) {
+        if (result.lockedSeconds) {
+          setLockoutSeconds(result.lockedSeconds);
+        }
+        setErrorMessage(result.error || 'Invalid username or password. Please verify your DepEd credentials.');
         setLoading(false);
         return;
       }
 
       // Check role authorization
-      if (targetRole === 'admin' && user.role !== 'admin') {
+      if (targetRole === 'admin' && result.user.role !== 'admin') {
         setErrorMessage('Access denied. Administrator privileges are required for this console.');
         setLoading(false);
         return;
       }
 
-      // Teacher or Admin can access teacher portal
+      // Clear password field from component memory
+      setPassword('');
       setLoading(false);
-      onSuccess(user);
-    }, 250);
+      onSuccess(result.user);
+    } catch {
+      setErrorMessage('Authentication error. Please try again.');
+      setLoading(false);
+    }
   };
 
   const isAdmin = targetRole === 'admin';
@@ -78,8 +102,18 @@ export const PortalLogin: React.FC<PortalLoginProps> = ({
         </div>
       </div>
 
-      {/* Error Alert */}
-      {errorMessage && (
+      {/* Error / Lockout Alert */}
+      {lockoutSeconds > 0 ? (
+        <div className="p-3.5 rounded-lg bg-amber-50 border border-amber-300 flex items-start gap-2.5 text-xs text-amber-900">
+          <Clock className="w-4 h-4 shrink-0 mt-0.5 text-amber-700 animate-pulse" />
+          <div>
+            <div className="font-bold">Security Lockout Active ({lockoutSeconds}s)</div>
+            <p className="text-[11px] mt-0.5">
+              Multiple unsuccessful login attempts were detected. Please wait {lockoutSeconds} seconds before trying again.
+            </p>
+          </div>
+        </div>
+      ) : errorMessage && (
         <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 flex items-start gap-2 text-xs text-rose-700 animate-shake">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>{errorMessage}</span>
@@ -100,10 +134,12 @@ export const PortalLogin: React.FC<PortalLoginProps> = ({
               type="text"
               required
               autoFocus
+              autoComplete="username"
+              disabled={lockoutSeconds > 0}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder={isAdmin ? "Enter administrator username" : "Enter faculty username"}
-              className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-lg border border-slate-300 focus:border-blue-900 focus:ring-1 focus:ring-blue-900 focus:outline-hidden font-medium"
+              className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-lg border border-slate-300 focus:border-blue-900 focus:ring-1 focus:ring-blue-900 focus:outline-hidden font-medium disabled:bg-slate-100"
             />
           </div>
         </div>
@@ -119,14 +155,17 @@ export const PortalLogin: React.FC<PortalLoginProps> = ({
             <input
               type={showPassword ? 'text' : 'password'}
               required
+              autoComplete="current-password"
+              disabled={lockoutSeconds > 0}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter password..."
-              className="w-full pl-9 pr-10 py-2.5 text-xs sm:text-sm rounded-lg border border-slate-300 focus:border-blue-900 focus:ring-1 focus:ring-blue-900 focus:outline-hidden font-medium font-mono"
+              className="w-full pl-9 pr-10 py-2.5 text-xs sm:text-sm rounded-lg border border-slate-300 focus:border-blue-900 focus:ring-1 focus:ring-blue-900 focus:outline-hidden font-medium font-mono disabled:bg-slate-100"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
               className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -136,15 +175,21 @@ export const PortalLogin: React.FC<PortalLoginProps> = ({
 
         <button
           type="submit"
-          disabled={loading}
-          className={`w-full py-2.5 px-4 text-xs sm:text-sm font-bold text-white rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+          disabled={loading || lockoutSeconds > 0}
+          className={`w-full py-2.5 px-4 text-xs sm:text-sm font-bold text-white rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
             isAdmin
               ? 'bg-blue-900 hover:bg-blue-800 active:bg-blue-950'
               : 'bg-emerald-800 hover:bg-emerald-700 active:bg-emerald-900'
           }`}
         >
           <KeyRound className="w-4 h-4" />
-          <span>{loading ? 'Authenticating...' : `Sign In to ${isAdmin ? 'Admin Console' : 'Faculty Console'}`}</span>
+          <span>
+            {lockoutSeconds > 0
+              ? `Locked (${lockoutSeconds}s)`
+              : loading
+              ? 'Verifying PBKDF2 Credentials...'
+              : `Sign In to ${isAdmin ? 'Admin Console' : 'Faculty Console'}`}
+          </span>
         </button>
       </form>
 
@@ -152,9 +197,9 @@ export const PortalLogin: React.FC<PortalLoginProps> = ({
       <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 flex items-start gap-2.5">
         <ShieldCheck className="w-4 h-4 text-blue-900 shrink-0 mt-0.5" />
         <div className="text-[11px] leading-relaxed">
-          <div className="font-semibold text-slate-800">DepEd INHS Information System</div>
+          <div className="font-semibold text-slate-800">Encrypted & Rate-Limited Authentication</div>
           <p className="text-slate-500 mt-0.5">
-            Access to this portal is restricted to authorized personnel. In compliance with the Data Privacy Act of 2012 (RA 10173), all system sessions and grade encoding activities are protected.
+            Protected with PBKDF2-SHA256 credential hashing, brute-force lockout protection, 15-minute idle session timeout, and RA 10173 Data Privacy Act safeguards.
           </p>
         </div>
       </div>

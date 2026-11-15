@@ -164,7 +164,7 @@ export const AdminSectionsManager: React.FC = () => {
   };
 
   // Submit Edit Section with Admin Password requirement
-  const handleSaveEditSection = (e: React.FormEvent) => {
+  const handleSaveEditSection = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingSection) return;
 
@@ -173,8 +173,9 @@ export const AdminSectionsManager: React.FC = () => {
       return;
     }
 
-    if (!schoolDb.verifyAdminPassword(editAdminPassword)) {
-      setEditError('Authentication failed: Incorrect Admin password. Section modification not authorized.');
+    const authCheck = await schoolDb.verifyAdminPasswordAsync(editAdminPassword);
+    if (!authCheck.verified) {
+      setEditError(authCheck.error || 'Authentication failed: Incorrect Admin password. Section modification not authorized.');
       return;
     }
 
@@ -225,12 +226,13 @@ export const AdminSectionsManager: React.FC = () => {
   };
 
   // Confirm Delete Section with Admin Password requirement
-  const handleConfirmDeleteSection = (e: React.FormEvent) => {
+  const handleConfirmDeleteSection = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!deletingSection) return;
 
-    if (!schoolDb.verifyAdminPassword(deleteAdminPassword)) {
-      setDeleteError('Authentication failed: Incorrect Admin password. Deletion not authorized.');
+    const authCheck = await schoolDb.verifyAdminPasswordAsync(deleteAdminPassword);
+    if (!authCheck.verified) {
+      setDeleteError(authCheck.error || 'Authentication failed: Incorrect Admin password. Deletion not authorized.');
       return;
     }
 

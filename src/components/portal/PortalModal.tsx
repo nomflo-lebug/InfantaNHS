@@ -24,8 +24,21 @@ import {
   Key,
   HelpCircle,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Lock,
+  ShieldAlert,
+  Upload
 } from 'lucide-react';
+import {
+  saveSecureSession,
+  loadValidSession,
+  touchSessionActivity,
+  clearSecureSession,
+  checkRateLimit,
+  recordFailedAttempt,
+  resetRateLimit,
+  sanitizeText,
+} from '../../utils/security';
 import { schoolDb, calculateSubjectFinal, calculateGeneralAverage } from '../../services/schoolDatabase';
 import { 
   StudentProfile, 
@@ -64,21 +77,17 @@ export const PortalModal: React.FC<PortalModalProps> = ({
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [applications, setApplications] = useState<EnrollmentApplication[]>([]);
   
-  // Authenticated User State
+  // Authenticated User State (loaded from tamper-evident sessionStorage with zero credentials stored)
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
-    try {
-      const stored = localStorage.getItem('inhs_active_auth_user');
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
+    const res = loadValidSession<UserAccount>();
+    return res.user;
   });
+  const [sessionNotice, setSessionNotice] = useState<string | null>(null);
 
   const handleLoginSuccess = (user: UserAccount) => {
+    setSessionNotice(null);
     setCurrentUser(user);
-    try {
-      localStorage.setItem('inhs_active_auth_user', JSON.stringify(user));
-    } catch {}
+    saveSecureSession(user);
     if (user.role === 'teacher' && user.teacherId) {
       setSelectedTeacherId(user.teacherId);
     }
@@ -86,16 +95,54 @@ export const PortalModal: React.FC<PortalModalProps> = ({
 
   const handleLogout = () => {
     if (confirm(`Sign out of ${currentUser?.fullName || 'account'}?`)) {
+      if (currentUser) {
+        schoolDb.logSecurityEvent('LOGOUT', currentUser.username, 'User signed out manually.', 'info');
+      }
       setCurrentUser(null);
-      try {
-        localStorage.removeItem('inhs_active_auth_user');
-      } catch {}
+      clearSecureSession();
     }
   };
+
+  // Monitor session validity & enforce 15-minute idle timeout
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const handleActivity = () => {
+      touchSessionActivity();
+    };
+
+    const interval = setInterval(() => {
+      const check = loadValidSession<UserAccount>();
+      if (!check.user) {
+        schoolDb.logSecurityEvent(
+          'SESSION_EXPIRED',
+          currentUser.username,
+          `Session ended automatically (${check.expiredReason || 'expired'}).`,
+          'info'
+        );
+        setCurrentUser(null);
+        clearSecureSession();
+        setSessionNotice(
+          check.expiredReason === 'idle'
+            ? 'Your session was locked automatically after 15 minutes of inactivity for security.'
+            : 'Your authenticated session has expired. Please sign in again.'
+        );
+      }
+    }, 30_000);
+
+    window.addEventListener('keydown', handleActivity);
+    window.addEventListener('mousedown', handleActivity);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('keydown', handleActivity);
+      window.removeEventListener('mousedown', handleActivity);
+    };
+  }, [currentUser]);
 
   // Student Portal State
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [searchLrn, setSearchLrn] = useState<string>('');
+  const [searchLastName, setSearchLastName] = useState<string>('');
   const [searchError, setSearchError] = useState<string | null>(null);
   const [studentTab, setStudentTab] = useState<'sf9' | 'profile' | 'core_values' | 'attendance'>('sf9');
   
@@ -109,6 +156,10 @@ export const PortalModal: React.FC<PortalModalProps> = ({
 
   // Admin Portal State
   const [adminTab, setAdminTab] = useState<'learners' | 'sections' | 'curriculum' | 'applications' | 'accounts' | 'announcements' | 'database'>('learners');
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetAdminPass, setResetAdminPass] = useState('');
+  const [resetModalError, setResetModalError] = useState<string | null>(null);
+  const [dbActionStatus, setDbActionStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [newNoticeTitle, setNewNoticeTitle] = useState('');
   const [newNoticeCategory, setNewNoticeCategory] = useState<'Announcement' | 'Academic' | 'Activities' | 'Admissions'>('Announcement');
   const [newNoticeSummary, setNewNoticeSummary] = useState('');
@@ -177,14 +228,27 @@ export const PortalModal: React.FC<PortalModalProps> = ({
     if (initialRole) setRole(initialRole);
     setSelectedStudentId('');
     setSearchLrn('');
+    setSearchLastName('');
     setSearchError(null);
   }, [initialRole, isOpen]);
+
+  // Enforce RBAC isolation: teachers can only access their own teacherId
+  useEffect(() => {
+    if (currentUser?.role === 'teacher' && currentUser.teacherId && selectedTeacherId !== currentUser.teacherId) {
+      setSelectedTeacherId(currentUser.teacherId);
+      setSelectedLoadIndex(0);
+    }
+  }, [currentUser, selectedTeacherId]);
 
   // Current selected student (null by default so NO student information is exposed initially)
   const currentStudent = selectedStudentId ? students.find(s => s.id === selectedStudentId) || null : null;
 
-  // Current selected teacher
-  const currentTeacher = teachers.find(t => t.id === selectedTeacherId) || teachers[0];
+  // Current selected teacher (strictly scoped for teacher accounts)
+  const effectiveTeacherId =
+    currentUser?.role === 'teacher' && currentUser.teacherId
+      ? currentUser.teacherId
+      : selectedTeacherId;
+  const currentTeacher = teachers.find(t => t.id === effectiveTeacherId) || teachers[0];
   const currentLoad = currentTeacher?.teachingLoads[selectedLoadIndex] || currentTeacher?.teachingLoads[0];
 
   // Filter students for the teacher's selected section
@@ -215,27 +279,52 @@ export const PortalModal: React.FC<PortalModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Student LRN Search
+  // Student LRN + Last Name Two-Factor Verification
   const handleStudentSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setSearchError(null);
-    const clean = searchLrn.trim();
-    if (!clean) {
-      setSearchError('Please enter a 12-digit Learner Reference Number (LRN).');
+
+    const rateStatus = checkRateLimit('lrn_lookup');
+    if (!rateStatus.allowed) {
+      setSearchError(`Too many unsuccessful verification attempts. Locked for ${rateStatus.retryAfterSeconds}s for learner privacy.`);
       return;
     }
-    const found = schoolDb.getStudentByLrn(clean);
-    if (found) {
+
+    const cleanLrn = searchLrn.trim().replace(/\D/g, '');
+    const cleanLastName = sanitizeText(searchLastName, 60).toLowerCase();
+
+    if (cleanLrn.length !== 12) {
+      setSearchError('Please enter a valid 12-digit Learner Reference Number (LRN).');
+      return;
+    }
+    if (!cleanLastName) {
+      setSearchError("Please enter the learner's Last Name for RA 10173 identity verification.");
+      return;
+    }
+
+    const found = schoolDb.getStudentByLrn(cleanLrn);
+    const nameMatches = found && found.lastName.trim().toLowerCase() === cleanLastName;
+
+    if (found && nameMatches) {
+      resetRateLimit('lrn_lookup');
+      schoolDb.logSecurityEvent('LRN_ACCESS_SUCCESS', currentUser?.username || 'student_parent', `Verified learner record access for LRN ending in ****${cleanLrn.slice(-4)}.`, 'info');
       setSelectedStudentId(found.id);
       setSearchError(null);
     } else {
-      setSearchError(`No enrolled learner profile was found with LRN: "${clean}". Please verify the 12-digit LRN on your Form 138/SF9 or consult your Class Adviser.`);
+      const failStatus = recordFailedAttempt('lrn_lookup');
+      schoolDb.logSecurityEvent('LRN_ACCESS_DENIED', currentUser?.username || 'student_parent', `Failed 2-factor LRN + Last Name verification attempt.`, 'warning');
+      setSearchError(
+        failStatus.allowed
+          ? `Verification failed. No enrolled learner matched that 12-digit LRN and Last Name (${failStatus.remainingAttempts} attempt(s) remaining).`
+          : `Too many failed attempts. Lookup temporarily locked for ${failStatus.retryAfterSeconds}s.`
+      );
     }
   };
 
   const handleClearStudent = () => {
     setSelectedStudentId('');
     setSearchLrn('');
+    setSearchLastName('');
     setSearchError(null);
   };
 
@@ -457,6 +546,21 @@ export const PortalModal: React.FC<PortalModalProps> = ({
 
         {/* Portal Body Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50">
+          {sessionNotice && (
+            <div className="mb-4 p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>{sessionNotice}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSessionNotice(null)}
+                className="text-amber-700 hover:text-amber-950 font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          )}
           
           {/* ========================================================= */}
           {/* 1. STUDENT & PARENT PORTAL */}
@@ -503,17 +607,40 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                     </p>
                   </div>
 
-                  <form onSubmit={handleStudentSearch} className="max-w-md mx-auto space-y-3">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        maxLength={12}
-                        placeholder="Enter 12-Digit LRN (e.g. 109823450012)"
-                        value={searchLrn}
-                        onChange={(e) => setSearchLrn(e.target.value.replace(/\D/g, ''))}
-                        className="w-full py-3 px-4 pl-11 text-base font-mono-num font-bold text-center tracking-wider text-slate-900 rounded-xl border-2 border-slate-300 focus:border-blue-900 focus:outline-hidden transition-all shadow-inner"
-                      />
-                      <Search className="w-5 h-5 text-slate-400 absolute left-3.5 top-3.5" />
+                  <form onSubmit={handleStudentSearch} className="max-w-md mx-auto space-y-3 text-left">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1 uppercase tracking-wide">
+                        1. 12-Digit Learner Reference Number (LRN)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          required
+                          maxLength={12}
+                          placeholder="Enter 12-Digit LRN"
+                          value={searchLrn}
+                          onChange={(e) => setSearchLrn(e.target.value.replace(/\D/g, ''))}
+                          className="w-full py-2.5 px-4 pl-11 text-sm sm:text-base font-mono-num font-bold tracking-wider text-slate-900 rounded-xl border-2 border-slate-300 focus:border-blue-900 focus:outline-hidden transition-all shadow-inner"
+                        />
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1 uppercase tracking-wide">
+                        2. Learner&apos;s Last Name (Identity Verification)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          required
+                          placeholder="Enter student's surname (e.g. Santos)"
+                          value={searchLastName}
+                          onChange={(e) => setSearchLastName(e.target.value)}
+                          className="w-full py-2.5 px-4 pl-11 text-sm font-semibold text-slate-900 rounded-xl border-2 border-slate-300 focus:border-blue-900 focus:outline-hidden transition-all shadow-inner"
+                        />
+                        <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                      </div>
                     </div>
 
                     <button
@@ -542,23 +669,6 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                     <p className="text-[11px] text-slate-500 max-w-md mx-auto">
                       The Learner Reference Number (LRN) is a permanent 12-digit number issued by DepEd, found on your Form 138 (Report Card), Certificate of Good Moral, or enrollment confirmation slip.
                     </p>
-                    <div className="pt-2 flex flex-wrap items-center justify-center gap-1.5">
-                      <span className="text-[10px] text-slate-400 font-semibold uppercase">Sample LRNs for Testing:</span>
-                      {students.slice(0, 3).map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => {
-                            setSearchLrn(s.lrn);
-                            setSelectedStudentId(s.id);
-                            setSearchError(null);
-                          }}
-                          className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-[11px] border border-slate-200 transition-colors cursor-pointer"
-                        >
-                          {s.lrn} ({s.firstName})
-                        </button>
-                      ))}
-                    </div>
                   </div>
                 </div>
               ) : (
@@ -1080,23 +1190,36 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                         {currentTeacher?.name ? currentTeacher.name.replace(/^(Mr\.|Mrs\.|Ms\.|Engr\.|Dr\.)\s*/, '')[0] : 'T'}
                       </div>
                       <div>
-                        <div className="text-xs uppercase font-bold text-blue-900">Faculty Gradebook Console</div>
-                        <select
-                          value={selectedTeacherId}
-                          onChange={(e) => {
-                            setSelectedTeacherId(e.target.value);
-                            setSelectedLoadIndex(0);
-                          }}
-                          className="text-base font-bold text-slate-900 bg-transparent border-b border-slate-300 focus:outline-hidden cursor-pointer"
-                        >
-                        {teachers.map(t => (
-                          <option key={t.id} value={t.id}>
-                            {t.name} ({t.title} · {t.department})
-                          </option>
-                        ))}
-                      </select>
+                        <div className="text-xs uppercase font-bold text-blue-900 flex items-center gap-1.5">
+                          <span>Faculty Gradebook Console</span>
+                          {currentUser.role !== 'admin' && (
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold normal-case">
+                              Scoped to Your Account
+                            </span>
+                          )}
+                        </div>
+                        {currentUser.role === 'admin' ? (
+                          <select
+                            value={selectedTeacherId}
+                            onChange={(e) => {
+                              setSelectedTeacherId(e.target.value);
+                              setSelectedLoadIndex(0);
+                            }}
+                            className="text-base font-bold text-slate-900 bg-transparent border-b border-slate-300 focus:outline-hidden cursor-pointer"
+                          >
+                            {teachers.map(t => (
+                              <option key={t.id} value={t.id}>
+                                {t.name} ({t.title} · {t.department})
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="text-base font-bold text-slate-900">
+                            {currentTeacher?.name} <span className="text-xs font-normal text-slate-500">({currentTeacher?.title} · {currentTeacher?.department})</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
                   {saveSuccessMsg && (
                     <div className="p-2.5 px-4 bg-emerald-100 border border-emerald-300 text-emerald-900 rounded-lg text-xs font-semibold flex items-center gap-2 animate-fade-in">
@@ -1589,61 +1712,181 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                   <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs space-y-6">
                     <div className="border-b border-slate-100 pb-3">
                       <h4 className="text-base font-bold text-slate-900">
-                        Local Database Tools & Factory Reset
+                        Local Database Tools &amp; Security Maintenance
                       </h4>
                       <p className="text-xs text-slate-500">
-                        Offline exports, raw JSON downloads, and emergency state recovery.
+                        Sanitized JSON exports (credentials redacted), validated backup restore, and password-protected factory reset.
                       </p>
                     </div>
 
-                  <div className="grid sm:grid-cols-3 gap-4">
-                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
-                      <div className="text-xs font-bold text-slate-800">Export JSON Backup</div>
-                      <p className="text-[11px] text-slate-600">Download complete database state containing all student records, report cards, and applications.</p>
-                      <button
-                        onClick={() => {
-                          const json = schoolDb.exportDatabaseJson();
-                          const blob = new Blob([json], { type: 'application/json' });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = `inhs_database_backup_${new Date().toISOString().slice(0, 10)}.json`;
-                          a.click();
-                        }}
-                        className="w-full py-2 bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Export Database JSON</span>
-                      </button>
-                    </div>
-
-                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
-                      <div className="text-xs font-bold text-slate-800">Reset to Default Data</div>
-                      <p className="text-[11px] text-slate-600">Restore default demo students (Maria Clara Santos, Juan Dela Cruz, etc.) and sample applications.</p>
-                      <button
-                        onClick={() => {
-                          if (confirm('Are you sure you want to reset the database to default seed data? All custom edits will be reverted.')) {
-                            schoolDb.resetToDefault();
-                            alert('Database restored to default records.');
-                          }
-                        }}
-                        className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        <span>Reset to Factory Defaults</span>
-                      </button>
-                    </div>
-
-                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
-                      <div className="text-xs font-bold text-slate-800">DepEd Compliance Audit</div>
-                      <p className="text-[11px] text-slate-600">All data structures strictly comply with DepEd Orders No. 8, s. 2015 and No. 3, s. 2018.</p>
-                      <div className="text-xs text-emerald-700 font-semibold flex items-center gap-1 pt-1">
-                        <CheckCircle className="w-4 h-4" /> Integrity Verified (100% Passing Audit)
+                    {dbActionStatus && (
+                      <div className={`p-3 rounded-lg border text-xs font-medium flex items-center gap-2 ${
+                        dbActionStatus.type === 'success'
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                          : 'bg-rose-50 border-rose-200 text-rose-800'
+                      }`}>
+                        {dbActionStatus.type === 'success' ? (
+                          <CheckCircle className="w-4 h-4 shrink-0 text-emerald-600" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                        )}
+                        <span>{dbActionStatus.text}</span>
                       </div>
+                    )}
+
+                    <div className="grid sm:grid-cols-3 gap-4">
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                        <div className="text-xs font-bold text-slate-800">Export Sanitized JSON Backup</div>
+                        <p className="text-[11px] text-slate-600">Download student records, grades, and applications. Credential hashes are automatically redacted.</p>
+                        <button
+                          onClick={() => {
+                            const json = schoolDb.exportDatabaseJson(currentUser.username);
+                            const blob = new Blob([json], { type: 'application/json' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `inhs_database_backup_${new Date().toISOString().slice(0, 10)}.json`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                            setDbActionStatus({ type: 'success', text: 'Sanitized database backup exported successfully.' });
+                          }}
+                          className="w-full py-2 bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Export Database JSON</span>
+                        </button>
+                      </div>
+
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                        <div className="text-xs font-bold text-slate-800">Validated JSON Restore</div>
+                        <p className="text-[11px] text-slate-600">Restore from an exported JSON backup with prototype-pollution &amp; schema validation.</p>
+                        <label className="w-full py-2 bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 cursor-pointer">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Import JSON Backup</span>
+                          <input
+                            type="file"
+                            accept="application/json,.json"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              if (file.size > 5_000_000) {
+                                setDbActionStatus({ type: 'error', text: 'Import rejected: file exceeds 5MB safety limit.' });
+                                return;
+                              }
+                              const reader = new FileReader();
+                              reader.onload = () => {
+                                const ok = schoolDb.importDatabaseJson(String(reader.result || ''), currentUser.username);
+                                setDbActionStatus(
+                                  ok
+                                    ? { type: 'success', text: 'Validated JSON backup imported successfully.' }
+                                    : { type: 'error', text: 'Import failed: invalid or corrupted backup schema.' }
+                                );
+                              };
+                              reader.readAsText(file);
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                      </div>
+
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                        <div className="text-xs font-bold text-slate-800">Protected Factory Reset</div>
+                        <p className="text-[11px] text-slate-600">Restore default seed records. Requires Administrator password authorization.</p>
+                        <button
+                          onClick={() => {
+                            setShowResetModal(true);
+                            setResetAdminPass('');
+                            setResetModalError(null);
+                          }}
+                          className="w-full py-2 bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Reset to Factory Defaults</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-emerald-50/60 rounded-lg border border-emerald-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="text-slate-700">
+                        <strong>DepEd &amp; RA 10173 Compliance Audit:</strong> PBKDF2-SHA256 hashing, 2-factor LRN verification, brute-force lockouts, and 15-minute session timeout active.
+                      </div>
+                      <span className="text-emerald-700 font-bold flex items-center gap-1">
+                        <CheckCircle className="w-4 h-4" /> Security Controls Active
+                      </span>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {/* Admin Password Confirmation Modal for Factory Reset */}
+              {showResetModal && (
+                <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
+                  <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-2xl space-y-4">
+                    <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                      <div className="w-9 h-9 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center">
+                        <ShieldAlert className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-base font-bold text-slate-900">Authorize Database Factory Reset</h4>
+                        <span className="text-xs text-rose-600 font-semibold">Critical Administrative Action</span>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-slate-600">
+                      This will revert all custom learner records, grades, sections, and accounts back to factory defaults. Enter your Admin password to confirm.
+                    </p>
+
+                    {resetModalError && (
+                      <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{resetModalError}</span>
+                      </div>
+                    )}
+
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        setResetModalError(null);
+                        const auth = await schoolDb.verifyAdminPasswordAsync(resetAdminPass, currentUser.username);
+                        if (!auth.verified) {
+                          setResetModalError(auth.error || 'Incorrect Admin password.');
+                          return;
+                        }
+                        schoolDb.resetToDefault(currentUser.username);
+                        setShowResetModal(false);
+                        setResetAdminPass('');
+                        setDbActionStatus({ type: 'success', text: 'Database restored to factory default seed data.' });
+                      }}
+                      className="space-y-3 text-xs"
+                    >
+                      <input
+                        type="password"
+                        required
+                        autoFocus
+                        placeholder="Enter Admin password..."
+                        value={resetAdminPass}
+                        onChange={(e) => setResetAdminPass(e.target.value)}
+                        className="w-full p-2.5 rounded-lg border-2 border-rose-300 focus:border-rose-600 focus:outline-hidden font-mono"
+                      />
+                      <div className="flex justify-end gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowResetModal(false)}
+                          className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-semibold cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg font-bold cursor-pointer"
+                        >
+                          Authorize &amp; Reset
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
               )}
 
             </div>
