@@ -27,7 +27,8 @@ import {
   Minimize2,
   Lock,
   ShieldAlert,
-  Upload
+  Upload,
+  MessageSquare
 } from 'lucide-react';
 import {
   saveSecureSession,
@@ -49,7 +50,8 @@ import {
   GradeLevel,
   StrandType,
   UserAccount,
-  EnrollmentSettings
+  EnrollmentSettings,
+  PublicInquiry
 } from '../../types/school';
 import { PortalLogin } from './PortalLogin';
 import { AdminSectionsManager } from './AdminSectionsManager';
@@ -59,6 +61,7 @@ import { TeacherAdvisoryManager } from './TeacherAdvisoryManager';
 import { GoogleDriveBackupManager } from './GoogleDriveBackupManager';
 import { AdminCurriculumManager } from './AdminCurriculumManager';
 import { AdminEnrollmentApplicationsManager } from './AdminEnrollmentApplicationsManager';
+import { AdminPublicInquiriesManager } from './AdminPublicInquiriesManager';
 import { TeacherLoadsManager } from './TeacherLoadsManager';
 import { APP_ASSETS } from '../../assets';
 
@@ -77,6 +80,7 @@ export const PortalModal: React.FC<PortalModalProps> = ({
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [applications, setApplications] = useState<EnrollmentApplication[]>([]);
+  const [inquiries, setInquiries] = useState<PublicInquiry[]>([]);
   const [enrollmentSettings, setEnrollmentSettings] = useState<EnrollmentSettings>(() =>
     schoolDb.getEnrollmentSettings()
   );
@@ -159,7 +163,7 @@ export const PortalModal: React.FC<PortalModalProps> = ({
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
 
   // Admin Portal State
-  const [adminTab, setAdminTab] = useState<'learners' | 'sections' | 'curriculum' | 'applications' | 'accounts' | 'announcements' | 'database'>('learners');
+  const [adminTab, setAdminTab] = useState<'learners' | 'sections' | 'curriculum' | 'applications' | 'inquiries' | 'accounts' | 'announcements' | 'database'>('learners');
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetAdminPass, setResetAdminPass] = useState('');
   const [resetModalError, setResetModalError] = useState<string | null>(null);
@@ -179,9 +183,11 @@ export const PortalModal: React.FC<PortalModalProps> = ({
       const allStudents = schoolDb.getStudents();
       const allTeachers = schoolDb.getTeachers();
       const allApps = schoolDb.getEnrollmentApplications();
+      const allInquiries = schoolDb.getPublicInquiries();
       setStudents(allStudents);
       setTeachers(allTeachers);
       setApplications(allApps);
+      setInquiries(allInquiries);
       setEnrollmentSettings(schoolDb.getEnrollmentSettings());
     };
 
@@ -1545,6 +1551,22 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                     <span>Enrollment Approvals ({applications.length})</span>
                   </button>
                   <button
+                    onClick={() => setAdminTab('inquiries')}
+                    className={`px-3 sm:px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                      adminTab === 'inquiries'
+                        ? 'bg-white text-blue-900 border-t-2 border-t-blue-900 border-x border-slate-200 font-bold'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>Assistance Desk ({inquiries.length})</span>
+                    {inquiries.filter((i) => i.status === 'New').length > 0 && (
+                      <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] font-bold font-mono">
+                        {inquiries.filter((i) => i.status === 'New').length}
+                      </span>
+                    )}
+                  </button>
+                  <button
                     onClick={() => setAdminTab('accounts')}
                     className={`px-3 sm:px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                       adminTab === 'accounts'
@@ -1597,6 +1619,14 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                 {/* Subtab: Enrollment Applications Review & Decision (Approve / Deny) */}
                 {adminTab === 'applications' && (
                   <AdminEnrollmentApplicationsManager
+                    reviewerName={currentUser.fullName}
+                    actorUsername={currentUser.username}
+                  />
+                )}
+
+                {/* Subtab: Online Public Assistance Desk (PAD) Inquiries */}
+                {adminTab === 'inquiries' && (
+                  <AdminPublicInquiriesManager
                     reviewerName={currentUser.fullName}
                     actorUsername={currentUser.username}
                   />

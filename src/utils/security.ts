@@ -52,7 +52,9 @@ export interface SecurityAuditEntry {
     | 'DATABASE_EXPORT'
     | 'DATABASE_IMPORT'
     | 'DATABASE_RESET'
-    | 'ENROLLMENT_STATUS_CHANGED';
+    | 'ENROLLMENT_STATUS_CHANGED'
+    | 'INQUIRY_STATUS_UPDATED'
+    | 'INQUIRY_DELETED';
   actor: string;
   details: string;
   severity: 'info' | 'warning' | 'critical';

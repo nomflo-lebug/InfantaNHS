@@ -273,4 +273,18 @@ export interface EnrollmentSettings {
   updatedAt?: string;
 }
 
+export type PublicInquiryStatus = 'New' | 'In Review' | 'Resolved';
 
+export interface PublicInquiry {
+  id: string;
+  fullName: string;
+  email: string;
+  phone?: string;
+  category: string;
+  message: string;
+  submittedAt: string;
+  status: PublicInquiryStatus;
+  adminNotes?: string;
+  handledBy?: string;
+  handledAt?: string;
+}

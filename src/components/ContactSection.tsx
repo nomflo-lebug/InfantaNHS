@@ -20,6 +20,8 @@ import {
   useApiLoadingStatus,
   APILoadingStatus
 } from '@vis.gl/react-google-maps';
+import { schoolDb } from '../services/schoolDatabase';
+import { PublicInquiry } from '../types/school';
 
 const INHS_COORDINATES = { lat: 14.7429743, lng: 121.6483008 };
 const INHS_MAPS_SHORT_URL = 'https://maps.app.goo.gl/Jx8pFBHyieh2E3kB8';
@@ -128,11 +130,30 @@ export const ContactSection: React.FC = () => {
   const [subject, setSubject] = useState('Enrollment Inquiry');
   const [message, setMessage] = useState('');
   const [isSent, setIsSent] = useState(false);
+  const [submittedInquiry, setSubmittedInquiry] = useState<PublicInquiry | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !message) return;
-    setIsSent(true);
+    setSubmitError(null);
+    if (!name.trim() || !email.trim() || !message.trim()) {
+      setSubmitError('Please fill in your full name, email address, and message details.');
+      return;
+    }
+
+    try {
+      const saved = schoolDb.submitPublicInquiry({
+        fullName: name,
+        email,
+        phone,
+        category: subject,
+        message,
+      });
+      setSubmittedInquiry(saved);
+      setIsSent(true);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Unable to submit inquiry. Please verify your entries.');
+    }
   };
 
   return (
@@ -254,21 +275,41 @@ export const ContactSection: React.FC = () => {
           {/* Interactive Inquiry Form */}
           <div className="lg:col-span-7 bg-white rounded-xl border border-slate-200 p-6 sm:p-8 shadow-xs">
             {isSent ? (
-              <div className="py-12 text-center space-y-4">
+              <div className="py-10 text-center space-y-4">
                 <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto">
                   <CheckCircle2 className="w-8 h-8" />
                 </div>
                 <h3 className="text-xl font-bold font-crest text-slate-900">
                   Salamat! Your Message Has Been Sent
                 </h3>
+                {submittedInquiry && (
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-900 text-xs font-mono font-bold">
+                    <span>Reference Ticket:</span>
+                    <span>{submittedInquiry.id}</span>
+                  </div>
+                )}
                 <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto">
-                  Thank you for reaching out to Infanta National High School. Our registrar or guidance desk will review your message and reply via email or phone within 1 to 2 school days.
+                  Thank you for reaching out to Infanta National High School. Your inquiry has been logged directly with our Administration &amp; Registrar desk and will be reviewed within 1 to 2 school days.
                 </p>
+                {submittedInquiry && (
+                  <div className="max-w-md mx-auto text-left bg-slate-50 border border-slate-200 rounded-lg p-3 text-[11px] text-slate-600 space-y-1">
+                    <div>
+                      <strong className="text-slate-800">Sender:</strong> {submittedInquiry.fullName} ({submittedInquiry.email})
+                    </div>
+                    <div>
+                      <strong className="text-slate-800">Category:</strong> {submittedInquiry.category}
+                    </div>
+                  </div>
+                )}
                 <button
                   onClick={() => {
                     setIsSent(false);
+                    setSubmittedInquiry(null);
+                    setSubmitError(null);
                     setMessage('');
                     setName('');
+                    setEmail('');
+                    setPhone('');
                   }}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
                 >
@@ -285,6 +326,12 @@ export const ContactSection: React.FC = () => {
                     Submit public inquiries, record requests, or schedule guidance consultations.
                   </p>
                 </div>
+
+                {submitError && (
+                  <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium">
+                    {submitError}
+                  </div>
+                )}
 
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>

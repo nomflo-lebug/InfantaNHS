@@ -19,7 +19,9 @@ import {
   CurriculumSubject,
   GradeLevel,
   TermSemester,
-  EnrollmentSettings
+  EnrollmentSettings,
+  PublicInquiry,
+  PublicInquiryStatus
 } from '../types/school';
 import {
   hashPassword,
@@ -49,6 +51,7 @@ interface DatabaseSchema {
   activities: SchoolActivity[];
   accounts: UserAccount[];
   sections: SchoolClassSection[];
+  publicInquiries?: PublicInquiry[];
   securityLogs?: SecurityAuditEntry[];
   enrollmentSettings?: EnrollmentSettings;
 }
@@ -61,6 +64,34 @@ const INITIAL_ENROLLMENT_SETTINGS: EnrollmentSettings = {
   reopenSchedule: 'To be announced by the Office of the Principal / Registrar',
   updatedBy: 'System Default',
 };
+
+const INITIAL_INQUIRIES: PublicInquiry[] = [
+  {
+    id: 'PAD-2026-1042',
+    fullName: 'Flordeliza R. Santos',
+    email: 'flordeliza.santos@gmail.com',
+    phone: '0917-442-8190',
+    category: 'Form 137 / SF10 Request',
+    message:
+      'Good day! Requesting a certified copy of Form 137 / SF10 for my son Gabriel Santos (Batch 2024, Grade 10 Rizal) for his college scholarship requirements. Kindly advise when we may pick it up at the Registrar.',
+    submittedAt: '2026-11-14T09:30:00.000Z',
+    status: 'New',
+  },
+  {
+    id: 'PAD-2026-1038',
+    fullName: 'Ronaldo M. Pujeda',
+    email: 'ronaldo.pujeda@yahoo.com',
+    phone: '0928-615-3024',
+    category: 'Senior High Voucher Program',
+    message:
+      'Hello Office of the Registrar, we would like to clarify the Qualified Voucher Recipient (QVR) submission deadline for incoming Grade 11 STEM transferees from private junior high schools.',
+    submittedAt: '2026-11-12T14:15:00.000Z',
+    status: 'In Review',
+    adminNotes: 'Advised parent via email to prepare ESC/QVR certificate and Grade 10 SF9.',
+    handledBy: 'System Administrator',
+    handledAt: '2026-11-13T08:45:00.000Z',
+  },
+];
 
 const DEFAULT_ATTENDANCE: AttendanceMonth[] = [
   { month: 'August', schoolDays: 21, daysPresent: 21, daysAbsent: 0 },
@@ -909,6 +940,11 @@ class SchoolDatabaseService {
           parsed.enrollmentSettings = { ...INITIAL_ENROLLMENT_SETTINGS };
         }
 
+        // Ensure Public Assistance Desk (PAD) inquiries array exists
+        if (!Array.isArray(parsed.publicInquiries)) {
+          parsed.publicInquiries = INITIAL_INQUIRIES.map(i => ({ ...i }));
+        }
+
         // Ensure sections exist
         if (!parsed.sections || !Array.isArray(parsed.sections) || parsed.sections.length === 0) {
           parsed.sections = INITIAL_SECTIONS;
@@ -999,6 +1035,7 @@ class SchoolDatabaseService {
       activities: INITIAL_ACTIVITIES,
       accounts: INITIAL_ACCOUNTS.map(a => ({ ...a })),
       sections: INITIAL_SECTIONS,
+      publicInquiries: INITIAL_INQUIRIES.map(i => ({ ...i })),
       securityLogs: [],
       enrollmentSettings: { ...INITIAL_ENROLLMENT_SETTINGS },
     };
@@ -1187,6 +1224,91 @@ class SchoolDatabaseService {
       isOpen ? 'info' : 'warning'
     );
     return { ...updated };
+  }
+
+  // --- Online Public Assistance Desk (PAD) Inquiries ---
+  public getPublicInquiries(): PublicInquiry[] {
+    return [...(this.data.publicInquiries || [])];
+  }
+
+  public submitPublicInquiry(inquiry: {
+    fullName: string;
+    email: string;
+    phone?: string;
+    category: string;
+    message: string;
+  }): PublicInquiry {
+    if (!this.data.publicInquiries) {
+      this.data.publicInquiries = [];
+    }
+
+    const cleanName = sanitizeText(inquiry.fullName, 120);
+    const cleanEmail = sanitizeEmail(inquiry.email) || sanitizeText(inquiry.email, 160);
+    const cleanPhone = sanitizePhone(inquiry.phone);
+    const cleanCategory = sanitizeText(inquiry.category, 100) || 'Other Concerns';
+    const cleanMessage = sanitizeText(inquiry.message, 2500);
+
+    if (!cleanName || !cleanMessage) {
+      throw new Error('Full name and inquiry message are required.');
+    }
+
+    const newInquiry: PublicInquiry = {
+      id: `PAD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      fullName: cleanName,
+      email: cleanEmail,
+      phone: cleanPhone || undefined,
+      category: cleanCategory,
+      message: cleanMessage,
+      submittedAt: new Date().toISOString(),
+      status: 'New',
+    };
+
+    this.data.publicInquiries.unshift(newInquiry);
+    this.persist(this.data);
+    return newInquiry;
+  }
+
+  public updatePublicInquiryStatus(
+    id: string,
+    status: PublicInquiryStatus,
+    adminNotes?: string,
+    handledBy: string = 'System Administrator'
+  ): boolean {
+    if (!this.data.publicInquiries) return false;
+    const target = this.data.publicInquiries.find(inq => inq.id === id);
+    if (!target) return false;
+
+    target.status = status;
+    if (adminNotes !== undefined) {
+      target.adminNotes = sanitizeText(adminNotes, 1000);
+    }
+    target.handledBy = sanitizeText(handledBy, 120) || 'System Administrator';
+    target.handledAt = new Date().toISOString();
+
+    this.logSecurityEvent(
+      'INQUIRY_STATUS_UPDATED',
+      target.handledBy,
+      `Updated PAD inquiry ${target.id} (${target.fullName}) status to ${status}.`,
+      'info'
+    );
+    return true;
+  }
+
+  public deletePublicInquiry(id: string, actorUsername: string = 'Admin'): boolean {
+    if (!this.data.publicInquiries) return false;
+    const prevLen = this.data.publicInquiries.length;
+    const target = this.data.publicInquiries.find(inq => inq.id === id);
+    this.data.publicInquiries = this.data.publicInquiries.filter(inq => inq.id !== id);
+    if (this.data.publicInquiries.length !== prevLen) {
+      this.logSecurityEvent(
+        'INQUIRY_DELETED',
+        actorUsername,
+        `Removed PAD inquiry ${id}${target ? ` (${target.fullName})` : ''}.`,
+        'warning'
+      );
+      return true;
+    }
+    return false;
   }
 
   // --- Enrollment Applications ---
@@ -1983,6 +2105,7 @@ class SchoolDatabaseService {
       accounts: INITIAL_ACCOUNTS.map(a => ({ ...a })),
       sections: INITIAL_SECTIONS,
       curriculumSubjects: INITIAL_CURRICULUM_SUBJECTS,
+      publicInquiries: INITIAL_INQUIRIES.map(i => ({ ...i })),
       securityLogs: this.data.securityLogs || [],
       enrollmentSettings: { ...INITIAL_ENROLLMENT_SETTINGS },
     };
@@ -2048,6 +2171,9 @@ class SchoolDatabaseService {
           activities: Array.isArray(parsed.activities) ? parsed.activities : this.data.activities,
           accounts: mergedAccounts,
           sections: parsed.sections,
+          publicInquiries: Array.isArray(parsed.publicInquiries)
+            ? parsed.publicInquiries
+            : this.data.publicInquiries || [],
           securityLogs: this.data.securityLogs || [],
           enrollmentSettings:
             parsed.enrollmentSettings && typeof parsed.enrollmentSettings.isOpen === 'boolean'
