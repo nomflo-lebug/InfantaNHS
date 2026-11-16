@@ -16,8 +16,9 @@ import { ContactSection } from './components/ContactSection';
 import { Footer } from './components/Footer';
 import { PortalModal } from './components/portal/PortalModal';
 import { EnrollmentPortalModal } from './components/portal/EnrollmentPortalModal';
-import { Role } from './types/school';
-import { GraduationCap, ArrowRight, FileCheck2 } from 'lucide-react';
+import { Role, EnrollmentSettings } from './types/school';
+import { GraduationCap, ArrowRight, FileCheck2, Lock } from 'lucide-react';
+import { schoolDb } from './services/schoolDatabase';
 
 export default function App() {
   const [activeSection, setActiveSection] = useState('home');
@@ -25,6 +26,16 @@ export default function App() {
   const [portalRole, setPortalRole] = useState<Role>('student_parent');
   const [enrollmentPortalOpen, setEnrollmentPortalOpen] = useState(false);
   const [enrollmentTab, setEnrollmentTab] = useState<'enroll' | 'status' | 'guidelines'>('enroll');
+  const [enrollmentSettings, setEnrollmentSettings] = useState<EnrollmentSettings>(() =>
+    schoolDb.getEnrollmentSettings()
+  );
+
+  React.useEffect(() => {
+    const sync = () => setEnrollmentSettings(schoolDb.getEnrollmentSettings());
+    sync();
+    const unsub = schoolDb.subscribe(sync);
+    return () => unsub();
+  }, []);
 
   const handleNavigate = (sectionId: string) => {
     setActiveSection(sectionId);
@@ -152,15 +163,29 @@ export default function App() {
       <aside aria-label="Portal Quick Launchers" className="fixed bottom-20 sm:bottom-24 right-4 sm:right-6 z-30 no-print flex flex-col items-end gap-2.5">
         <button
           onClick={() => handleOpenEnrollmentPortal('enroll')}
-          className="flex items-center gap-2 px-3.5 py-2.5 bg-emerald-800 hover:bg-emerald-700 active:bg-emerald-900 text-white rounded-full shadow-lg hover:shadow-xl border border-emerald-400/40 transition-all duration-200 cursor-pointer group"
+          className={`flex items-center gap-2 px-3.5 py-2.5 text-white rounded-full shadow-lg hover:shadow-xl border transition-all duration-200 cursor-pointer group ${
+            enrollmentSettings.isOpen
+              ? 'bg-emerald-800 hover:bg-emerald-700 active:bg-emerald-900 border-emerald-400/40'
+              : 'bg-rose-800 hover:bg-rose-700 active:bg-rose-900 border-rose-400/40'
+          }`}
           title="Open Dedicated Online Enrollment Portal"
         >
-          <FileCheck2 className="w-4 h-4 text-emerald-300 group-hover:scale-110 transition-transform" />
+          {enrollmentSettings.isOpen ? (
+            <FileCheck2 className="w-4 h-4 text-emerald-300 group-hover:scale-110 transition-transform" />
+          ) : (
+            <Lock className="w-4 h-4 text-rose-200 group-hover:scale-110 transition-transform" />
+          )}
           <span className="text-xs font-bold tracking-wide">
-            Enroll Online
+            {enrollmentSettings.isOpen ? 'Enroll Online' : 'Enrollment Closed'}
           </span>
-          <span className="hidden sm:inline text-[10px] bg-emerald-950 text-emerald-300 font-mono px-1.5 py-0.5 rounded-full font-bold">
-            2026–2027
+          <span
+            className={`hidden sm:inline text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold ${
+              enrollmentSettings.isOpen
+                ? 'bg-emerald-950 text-emerald-300'
+                : 'bg-rose-950 text-rose-200'
+            }`}
+          >
+            {enrollmentSettings.isOpen ? enrollmentSettings.schoolYear : 'HALTED'}
           </span>
         </button>
 

@@ -18,7 +18,8 @@ import {
   SchoolClassSection,
   CurriculumSubject,
   GradeLevel,
-  TermSemester
+  TermSemester,
+  EnrollmentSettings
 } from '../types/school';
 import {
   hashPassword,
@@ -49,7 +50,17 @@ interface DatabaseSchema {
   accounts: UserAccount[];
   sections: SchoolClassSection[];
   securityLogs?: SecurityAuditEntry[];
+  enrollmentSettings?: EnrollmentSettings;
 }
+
+const INITIAL_ENROLLMENT_SETTINGS: EnrollmentSettings = {
+  isOpen: true,
+  schoolYear: '2026–2027',
+  closedTitle: 'Online Enrollment Temporarily Halted / Closed',
+  closedReason: 'The Office of the School Registrar has temporarily closed online enrollment submissions while reviewing applications and finalizing section placements.',
+  reopenSchedule: 'To be announced by the Office of the Principal / Registrar',
+  updatedBy: 'System Default',
+};
 
 const DEFAULT_ATTENDANCE: AttendanceMonth[] = [
   { month: 'August', schoolDays: 21, daysPresent: 21, daysAbsent: 0 },
@@ -893,6 +904,11 @@ class SchoolDatabaseService {
           parsed.securityLogs = [];
         }
 
+        // Ensure enrollment portal status settings exist
+        if (!parsed.enrollmentSettings || typeof parsed.enrollmentSettings.isOpen !== 'boolean') {
+          parsed.enrollmentSettings = { ...INITIAL_ENROLLMENT_SETTINGS };
+        }
+
         // Ensure sections exist
         if (!parsed.sections || !Array.isArray(parsed.sections) || parsed.sections.length === 0) {
           parsed.sections = INITIAL_SECTIONS;
@@ -984,6 +1000,7 @@ class SchoolDatabaseService {
       accounts: INITIAL_ACCOUNTS.map(a => ({ ...a })),
       sections: INITIAL_SECTIONS,
       securityLogs: [],
+      enrollmentSettings: { ...INITIAL_ENROLLMENT_SETTINGS },
     };
     this.persist(initial);
     return initial;
@@ -1128,12 +1145,60 @@ class SchoolDatabaseService {
     return false;
   }
 
+  // --- Online Enrollment Availability Settings ---
+  public getEnrollmentSettings(): EnrollmentSettings {
+    return {
+      ...INITIAL_ENROLLMENT_SETTINGS,
+      ...(this.data.enrollmentSettings || {}),
+    };
+  }
+
+  public setEnrollmentStatus(
+    isOpen: boolean,
+    options?: {
+      schoolYear?: string;
+      closedTitle?: string;
+      closedReason?: string;
+      reopenSchedule?: string;
+    },
+    actorUsername: string = 'Admin'
+  ): EnrollmentSettings {
+    const current = this.getEnrollmentSettings();
+    const updated: EnrollmentSettings = {
+      isOpen,
+      schoolYear: sanitizeText(options?.schoolYear, 30) || current.schoolYear || INITIAL_ENROLLMENT_SETTINGS.schoolYear,
+      closedTitle: sanitizeText(options?.closedTitle, 140) || current.closedTitle || INITIAL_ENROLLMENT_SETTINGS.closedTitle,
+      closedReason: sanitizeText(options?.closedReason, 500) || current.closedReason || INITIAL_ENROLLMENT_SETTINGS.closedReason,
+      reopenSchedule:
+        options?.reopenSchedule !== undefined
+          ? sanitizeText(options.reopenSchedule, 140)
+          : current.reopenSchedule,
+      updatedBy: sanitizeText(actorUsername, 80) || 'Admin',
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.data.enrollmentSettings = updated;
+    this.logSecurityEvent(
+      'ENROLLMENT_STATUS_CHANGED',
+      actorUsername,
+      isOpen
+        ? `Online Enrollment Portal OPENED for S.Y. ${updated.schoolYear}.`
+        : `Online Enrollment Portal CLOSED / HALTED for S.Y. ${updated.schoolYear}. Reason: ${updated.closedReason}`,
+      isOpen ? 'info' : 'warning'
+    );
+    return { ...updated };
+  }
+
   // --- Enrollment Applications ---
   public getEnrollmentApplications(): EnrollmentApplication[] {
     return [...this.data.enrollmentApplications];
   }
 
   public submitEnrollmentApplication(app: Omit<EnrollmentApplication, 'id' | 'submissionDate' | 'status'>): EnrollmentApplication {
+    if (!this.getEnrollmentSettings().isOpen) {
+      throw new Error('Online enrollment is currently closed or halted by the School Administration.');
+    }
+
     const newApp: EnrollmentApplication = {
       ...app,
       lrn: app.lrn ? sanitizeLrn(app.lrn) : undefined,
@@ -1919,6 +1984,7 @@ class SchoolDatabaseService {
       sections: INITIAL_SECTIONS,
       curriculumSubjects: INITIAL_CURRICULUM_SUBJECTS,
       securityLogs: this.data.securityLogs || [],
+      enrollmentSettings: { ...INITIAL_ENROLLMENT_SETTINGS },
     };
     this.logSecurityEvent(
       'DATABASE_RESET',
@@ -1983,6 +2049,10 @@ class SchoolDatabaseService {
           accounts: mergedAccounts,
           sections: parsed.sections,
           securityLogs: this.data.securityLogs || [],
+          enrollmentSettings:
+            parsed.enrollmentSettings && typeof parsed.enrollmentSettings.isOpen === 'boolean'
+              ? parsed.enrollmentSettings
+              : this.getEnrollmentSettings(),
         };
         this.logSecurityEvent(
           'DATABASE_IMPORT',

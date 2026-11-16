@@ -51,7 +51,8 @@ export interface SecurityAuditEntry {
     | 'LRN_ACCESS_DENIED'
     | 'DATABASE_EXPORT'
     | 'DATABASE_IMPORT'
-    | 'DATABASE_RESET';
+    | 'DATABASE_RESET'
+    | 'ENROLLMENT_STATUS_CHANGED';
   actor: string;
   details: string;
   severity: 'info' | 'warning' | 'critical';

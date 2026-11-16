@@ -6,9 +6,12 @@ import {
   BookOpen, 
   UserCheck, 
   ChevronRight,
-  FileCheck2
+  FileCheck2,
+  Lock
 } from 'lucide-react';
 import { APP_ASSETS } from '../assets';
+import { schoolDb } from '../services/schoolDatabase';
+import { EnrollmentSettings } from '../types/school';
 
 interface HeaderProps {
   activeSection: string;
@@ -33,12 +36,22 @@ export const Header: React.FC<HeaderProps> = ({
     }
   });
 
+  const [enrollmentSettings, setEnrollmentSettings] = useState<EnrollmentSettings>(() =>
+    schoolDb.getEnrollmentSettings()
+  );
+
   React.useEffect(() => {
     const handleUpdate = (e: any) => {
       if (e.detail) setVisitorCount(e.detail);
     };
     window.addEventListener('inhs_visitor_count_updated', handleUpdate);
-    return () => window.removeEventListener('inhs_visitor_count_updated', handleUpdate);
+    const unsubDb = schoolDb.subscribe(() => {
+      setEnrollmentSettings(schoolDb.getEnrollmentSettings());
+    });
+    return () => {
+      window.removeEventListener('inhs_visitor_count_updated', handleUpdate);
+      unsubDb();
+    };
   }, []);
 
   const navItems = [
@@ -132,11 +145,19 @@ export const Header: React.FC<HeaderProps> = ({
             {onOpenEnrollmentPortal && (
               <button
                 onClick={() => onOpenEnrollmentPortal('enroll')}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-800 hover:bg-emerald-700 active:bg-emerald-900 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-xs transition-colors whitespace-nowrap cursor-pointer border border-emerald-600/30"
+                className={`hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-xs transition-colors whitespace-nowrap cursor-pointer border ${
+                  enrollmentSettings.isOpen
+                    ? 'bg-emerald-800 hover:bg-emerald-700 active:bg-emerald-900 border-emerald-600/30'
+                    : 'bg-rose-800 hover:bg-rose-700 active:bg-rose-900 border-rose-500/40'
+                }`}
                 title="Open Dedicated Online Enrollment Portal"
               >
-                <FileCheck2 className="w-4 h-4 text-emerald-300" />
-                <span>Online Enrollment</span>
+                {enrollmentSettings.isOpen ? (
+                  <FileCheck2 className="w-4 h-4 text-emerald-300" />
+                ) : (
+                  <Lock className="w-4 h-4 text-rose-200" />
+                )}
+                <span>{enrollmentSettings.isOpen ? 'Online Enrollment' : 'Enrollment Closed'}</span>
               </button>
             )}
 
@@ -212,10 +233,22 @@ export const Header: React.FC<HeaderProps> = ({
                   setMobileMenuOpen(false);
                   onOpenEnrollmentPortal('enroll');
                 }}
-                className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-800 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 cursor-pointer shadow-xs"
+                className={`w-full flex items-center justify-center gap-2 py-2.5 text-white rounded-lg text-sm font-semibold cursor-pointer shadow-xs ${
+                  enrollmentSettings.isOpen
+                    ? 'bg-emerald-800 hover:bg-emerald-700'
+                    : 'bg-rose-800 hover:bg-rose-700'
+                }`}
               >
-                <FileCheck2 className="w-4 h-4 text-emerald-300" />
-                <span>Online Enrollment Portal (BEEF)</span>
+                {enrollmentSettings.isOpen ? (
+                  <FileCheck2 className="w-4 h-4 text-emerald-300" />
+                ) : (
+                  <Lock className="w-4 h-4 text-rose-200" />
+                )}
+                <span>
+                  {enrollmentSettings.isOpen
+                    ? 'Online Enrollment Portal (BEEF)'
+                    : 'Online Enrollment (Closed)'}
+                </span>
               </button>
             )}
             <button

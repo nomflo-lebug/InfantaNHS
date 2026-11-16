@@ -19,17 +19,24 @@ import {
   X,
   Check,
   ChevronDown,
-  ShieldCheck
+  ShieldCheck,
+  Lock,
+  Unlock,
+  PauseCircle,
+  PlayCircle,
+  Edit3
 } from 'lucide-react';
 import { schoolDb } from '../../services/schoolDatabase';
-import { EnrollmentApplication, SchoolClassSection, GradeLevel } from '../../types/school';
+import { EnrollmentApplication, SchoolClassSection, GradeLevel, EnrollmentSettings } from '../../types/school';
 
 interface AdminEnrollmentApplicationsManagerProps {
   reviewerName?: string;
+  actorUsername?: string;
 }
 
 export const AdminEnrollmentApplicationsManager: React.FC<AdminEnrollmentApplicationsManagerProps> = ({
   reviewerName = 'System Administrator',
+  actorUsername = 'Admin',
 }) => {
   const [applications, setApplications] = useState<EnrollmentApplication[]>([]);
   const [sections, setSections] = useState<SchoolClassSection[]>([]);
@@ -52,10 +59,22 @@ export const AdminEnrollmentApplicationsManager: React.FC<AdminEnrollmentApplica
   // Alerts
   const [bannerMessage, setBannerMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Online Enrollment Gate Control State
+  const [enrollmentSettings, setEnrollmentSettings] = useState<EnrollmentSettings>(() =>
+    schoolDb.getEnrollmentSettings()
+  );
+  const [showGateEditor, setShowGateEditor] = useState(false);
+  const [gateActionMode, setGateActionMode] = useState<'halt' | 'edit'>('halt');
+  const [draftSchoolYear, setDraftSchoolYear] = useState(enrollmentSettings.schoolYear);
+  const [draftClosedTitle, setDraftClosedTitle] = useState(enrollmentSettings.closedTitle);
+  const [draftClosedReason, setDraftClosedReason] = useState(enrollmentSettings.closedReason);
+  const [draftReopenSchedule, setDraftReopenSchedule] = useState(enrollmentSettings.reopenSchedule || '');
+
   useEffect(() => {
     const sync = () => {
       setApplications(schoolDb.getEnrollmentApplications());
       setSections(schoolDb.getSections());
+      setEnrollmentSettings(schoolDb.getEnrollmentSettings());
     };
     sync();
     const unsub = schoolDb.subscribe(sync);
@@ -151,6 +170,53 @@ export const AdminEnrollmentApplicationsManager: React.FC<AdminEnrollmentApplica
     }
   };
 
+  const handleOpenGateEditor = (mode: 'halt' | 'edit') => {
+    const current = schoolDb.getEnrollmentSettings();
+    setDraftSchoolYear(current.schoolYear);
+    setDraftClosedTitle(current.closedTitle);
+    setDraftClosedReason(current.closedReason);
+    setDraftReopenSchedule(current.reopenSchedule || '');
+    setGateActionMode(mode);
+    setShowGateEditor(true);
+  };
+
+  const handleConfirmHaltOrSaveNotice = (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetOpen = gateActionMode === 'halt' ? false : enrollmentSettings.isOpen;
+    const updated = schoolDb.setEnrollmentStatus(
+      targetOpen,
+      {
+        schoolYear: draftSchoolYear,
+        closedTitle: draftClosedTitle,
+        closedReason: draftClosedReason,
+        reopenSchedule: draftReopenSchedule,
+      },
+      actorUsername
+    );
+    setEnrollmentSettings(updated);
+    setShowGateEditor(false);
+    showNotification(
+      'success',
+      targetOpen
+        ? `Online Enrollment notice settings updated (Portal remains OPEN for S.Y. ${updated.schoolYear}).`
+        : `Online Enrollment Portal has been CLOSED / HALTED for S.Y. ${updated.schoolYear}. Public submissions are now paused.`
+    );
+  };
+
+  const handleOpenEnrollmentPortal = () => {
+    const updated = schoolDb.setEnrollmentStatus(
+      true,
+      { schoolYear: enrollmentSettings.schoolYear },
+      actorUsername
+    );
+    setEnrollmentSettings(updated);
+    setShowGateEditor(false);
+    showNotification(
+      'success',
+      `Online Enrollment Portal is now OPEN for S.Y. ${updated.schoolYear}! Prospective learners and parents can submit applications.`
+    );
+  };
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-6">
       {/* Header & Stats Banner */}
@@ -168,7 +234,7 @@ export const AdminEnrollmentApplicationsManager: React.FC<AdminEnrollmentApplica
             Student Enrollment Applications & Profile Review
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Evaluate incoming Grade 7 (JHS), Grade 11 (SHS), and Transferee student profiles. Approve class section placement or deny with official remarks.
+            Evaluate incoming Grade 7 (JHS), Grade 11 (SHS), and Transferee student profiles, and control Online Enrollment availability.
           </p>
         </div>
 
@@ -192,6 +258,212 @@ export const AdminEnrollmentApplicationsManager: React.FC<AdminEnrollmentApplica
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Online Enrollment Portal Gate Control Panel */}
+      <div
+        className={`rounded-2xl border-2 p-4 sm:p-5 transition-colors ${
+          enrollmentSettings.isOpen
+            ? 'bg-emerald-50/70 border-emerald-300'
+            : 'bg-rose-50/80 border-rose-300'
+        }`}
+      >
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div
+              className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
+                enrollmentSettings.isOpen
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-rose-700 text-white'
+              }`}
+            >
+              {enrollmentSettings.isOpen ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+            </div>
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                  Online Enrollment Portal Control
+                </span>
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                    enrollmentSettings.isOpen
+                      ? 'bg-emerald-700 text-white'
+                      : 'bg-rose-700 text-white'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      enrollmentSettings.isOpen ? 'bg-emerald-200 animate-pulse' : 'bg-rose-200'
+                    }`}
+                  />
+                  {enrollmentSettings.isOpen ? 'OPEN FOR SUBMISSIONS' : 'CLOSED / HALTED'}
+                </span>
+                <span className="text-[11px] font-mono font-semibold text-slate-600 bg-white/80 px-2 py-0.5 rounded border border-slate-200">
+                  S.Y. {enrollmentSettings.schoolYear}
+                </span>
+              </div>
+              <p className="text-xs text-slate-700 leading-relaxed">
+                {enrollmentSettings.isOpen
+                  ? 'Prospective learners and parents can currently submit new enrollment applications via the Online Enrollment Portal.'
+                  : `Public form submissions are paused. Visitors see: "${enrollmentSettings.closedTitle}" — ${enrollmentSettings.closedReason}`}
+              </p>
+              {enrollmentSettings.updatedAt && (
+                <div className="text-[11px] text-slate-500 font-mono">
+                  Last updated by <strong>{enrollmentSettings.updatedBy || 'Admin'}</strong> on{' '}
+                  {new Date(enrollmentSettings.updatedAt).toLocaleString()}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => handleOpenGateEditor('edit')}
+              className="px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+            >
+              <Edit3 className="w-3.5 h-3.5 text-slate-600" />
+              <span>Configure Closed Notice</span>
+            </button>
+
+            {enrollmentSettings.isOpen ? (
+              <button
+                type="button"
+                onClick={() => handleOpenGateEditor('halt')}
+                className="px-4 py-2 bg-rose-700 hover:bg-rose-800 active:bg-rose-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm"
+              >
+                <PauseCircle className="w-4 h-4" />
+                <span>Close / Halt Enrollment</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleOpenEnrollmentPortal}
+                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm"
+              >
+                <PlayCircle className="w-4 h-4" />
+                <span>Open Online Enrollment</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Inline Editor / Confirmation Panel for Closing/Halting or Configuring Notice */}
+        {showGateEditor && (
+          <form
+            onSubmit={handleConfirmHaltOrSaveNotice}
+            className="mt-4 pt-4 border-t border-slate-200/80 bg-white rounded-xl p-4 shadow-xs space-y-3 text-xs animate-fade-in"
+          >
+            <div className="flex items-center justify-between">
+              <div className="font-bold text-slate-900 flex items-center gap-2">
+                {gateActionMode === 'halt' ? (
+                  <>
+                    <PauseCircle className="w-4 h-4 text-rose-700" />
+                    <span>Close / Halt Online Enrollment &amp; Set Public Notice</span>
+                  </>
+                ) : (
+                  <>
+                    <Edit3 className="w-4 h-4 text-blue-800" />
+                    <span>Edit Online Enrollment Notice &amp; School Year</span>
+                  </>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGateEditor(false)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Target School Year
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={draftSchoolYear}
+                  onChange={(e) => setDraftSchoolYear(e.target.value)}
+                  placeholder="e.g. 2026–2027"
+                  className="w-full p-2 rounded-lg border border-slate-300 focus:border-blue-900 focus:outline-hidden font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Expected Reopening / Advisory Schedule
+                </label>
+                <input
+                  type="text"
+                  value={draftReopenSchedule}
+                  onChange={(e) => setDraftReopenSchedule(e.target.value)}
+                  placeholder="e.g. May 2027 or To be announced"
+                  className="w-full p-2 rounded-lg border border-slate-300 focus:border-blue-900 focus:outline-hidden"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                Public Closure Notice Headline
+              </label>
+              <input
+                type="text"
+                required
+                value={draftClosedTitle}
+                onChange={(e) => setDraftClosedTitle(e.target.value)}
+                placeholder="e.g. Online Enrollment Temporarily Halted / Closed"
+                className="w-full p-2 rounded-lg border border-slate-300 focus:border-blue-900 focus:outline-hidden font-semibold"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                Reason / Guidance Shown to Learners &amp; Parents
+              </label>
+              <textarea
+                rows={2}
+                required
+                value={draftClosedReason}
+                onChange={(e) => setDraftClosedReason(e.target.value)}
+                placeholder="Explain why enrollment is closed and where inquiries can be directed..."
+                className="w-full p-2 rounded-lg border border-slate-300 focus:border-blue-900 focus:outline-hidden"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowGateEditor(false)}
+                className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className={`px-4 py-1.5 text-white rounded-lg font-bold cursor-pointer flex items-center gap-1.5 shadow-xs ${
+                  gateActionMode === 'halt'
+                    ? 'bg-rose-700 hover:bg-rose-800'
+                    : 'bg-blue-900 hover:bg-blue-800'
+                }`}
+              >
+                {gateActionMode === 'halt' ? (
+                  <>
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Confirm &amp; Halt Online Enrollment</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Save Notice Settings</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* Banner Feedback */}

@@ -48,7 +48,8 @@ import {
   Role,
   GradeLevel,
   StrandType,
-  UserAccount
+  UserAccount,
+  EnrollmentSettings
 } from '../../types/school';
 import { PortalLogin } from './PortalLogin';
 import { AdminSectionsManager } from './AdminSectionsManager';
@@ -76,6 +77,9 @@ export const PortalModal: React.FC<PortalModalProps> = ({
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [applications, setApplications] = useState<EnrollmentApplication[]>([]);
+  const [enrollmentSettings, setEnrollmentSettings] = useState<EnrollmentSettings>(() =>
+    schoolDb.getEnrollmentSettings()
+  );
   
   // Authenticated User State (loaded from tamper-evident sessionStorage with zero credentials stored)
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
@@ -178,6 +182,7 @@ export const PortalModal: React.FC<PortalModalProps> = ({
       setStudents(allStudents);
       setTeachers(allTeachers);
       setApplications(allApps);
+      setEnrollmentSettings(schoolDb.getEnrollmentSettings());
     };
 
     sync();
@@ -1457,7 +1462,21 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                   </div>
 
                   <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-1">
-                    <div className="text-xs text-slate-500 font-semibold uppercase">Online Applications</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs text-slate-500 font-semibold uppercase">Online Enrollment</div>
+                      <button
+                        type="button"
+                        onClick={() => setAdminTab('applications')}
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full cursor-pointer transition-colors ${
+                          enrollmentSettings.isOpen
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200'
+                            : 'bg-rose-100 text-rose-800 border border-rose-200 hover:bg-rose-200'
+                        }`}
+                        title="Click to Open or Close Online Enrollment Portal"
+                      >
+                        {enrollmentSettings.isOpen ? 'OPEN' : 'HALTED'}
+                      </button>
+                    </div>
                     <div className="text-2xl font-bold font-mono-num text-amber-600">{applications.length} Received</div>
                     <div className="text-[11px] text-slate-400">
                       {applications.filter(a => a.status === 'Pending Review').length} Pending Review
@@ -1577,7 +1596,10 @@ export const PortalModal: React.FC<PortalModalProps> = ({
 
                 {/* Subtab: Enrollment Applications Review & Decision (Approve / Deny) */}
                 {adminTab === 'applications' && (
-                  <AdminEnrollmentApplicationsManager reviewerName={currentUser.fullName} />
+                  <AdminEnrollmentApplicationsManager
+                    reviewerName={currentUser.fullName}
+                    actorUsername={currentUser.username}
+                  />
                 )}
 
                 {/* Subtab: User Accounts Manager */}

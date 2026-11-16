@@ -8,9 +8,12 @@ import {
   Users, 
   Compass, 
   Sparkles,
-  BookOpenCheck
+  BookOpenCheck,
+  Lock
 } from 'lucide-react';
 import { APP_ASSETS } from '../assets';
+import { schoolDb } from '../services/schoolDatabase';
+import { EnrollmentSettings } from '../types/school';
 
 interface HeroSectionProps {
   onNavigate: (sectionId: string) => void;
@@ -23,6 +26,17 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   onOpenPortal,
   onOpenEnrollmentPortal,
 }) => {
+  const [enrollmentSettings, setEnrollmentSettings] = React.useState<EnrollmentSettings>(() =>
+    schoolDb.getEnrollmentSettings()
+  );
+
+  React.useEffect(() => {
+    const sync = () => setEnrollmentSettings(schoolDb.getEnrollmentSettings());
+    sync();
+    const unsub = schoolDb.subscribe(sync);
+    return () => unsub();
+  }, []);
+
   return (
     <section className="relative overflow-hidden bg-slate-900 text-white">
       {/* Background Home Wallpaper: Infanta National High School Fighting Roosters */}
@@ -55,9 +69,23 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-8 py-10 sm:py-12 lg:py-14">
         {/* Urgent Announcement Ticker */}
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-400/20 border border-amber-400/40 text-amber-200 text-xs font-medium mb-4 backdrop-blur-xs">
-          <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-          <span>DepEd Early Registration for S.Y. 2026-2027 is Ongoing · Grade 7 & Grade 11</span>
+        <div
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium mb-4 backdrop-blur-xs border ${
+            enrollmentSettings.isOpen
+              ? 'bg-amber-400/20 border-amber-400/40 text-amber-200'
+              : 'bg-rose-500/25 border-rose-400/50 text-rose-100'
+          }`}
+        >
+          {enrollmentSettings.isOpen ? (
+            <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+          ) : (
+            <Lock className="w-4 h-4 text-rose-300 shrink-0" />
+          )}
+          <span>
+            {enrollmentSettings.isOpen
+              ? `DepEd Early Registration for S.Y. ${enrollmentSettings.schoolYear} is Ongoing · Grade 7 & Grade 11`
+              : `Online Enrollment for S.Y. ${enrollmentSettings.schoolYear} is Temporarily Closed / Halted`}
+          </span>
         </div>
 
         <div className="grid lg:grid-cols-12 gap-6 lg:gap-8 items-center">
@@ -79,11 +107,17 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
             <div className="flex flex-wrap items-center gap-3.5 pt-2">
               <button
                 onClick={() => onOpenEnrollmentPortal ? onOpenEnrollmentPortal('enroll') : onNavigate('admissions')}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 text-sm font-bold rounded-lg shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
+                className={`inline-flex items-center gap-2 px-6 py-3 text-sm font-bold rounded-lg shadow-lg transition-all cursor-pointer ${
+                  enrollmentSettings.isOpen
+                    ? 'bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 shadow-amber-500/20'
+                    : 'bg-rose-700 hover:bg-rose-600 text-white border border-rose-400/40 shadow-rose-900/20'
+                }`}
                 title="Launch Dedicated Online Enrollment Portal"
               >
-                <FileText className="w-4 h-4" />
-                <span>Online Enrollment Portal</span>
+                {enrollmentSettings.isOpen ? <FileText className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                <span>
+                  {enrollmentSettings.isOpen ? 'Online Enrollment Portal' : 'Online Enrollment (Closed)'}
+                </span>
                 <ArrowRight className="w-4 h-4" />
               </button>
 

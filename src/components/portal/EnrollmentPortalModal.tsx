@@ -23,10 +23,11 @@ import {
   BookOpen,
   ArrowRight,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Lock
 } from 'lucide-react';
 import { schoolDb } from '../../services/schoolDatabase';
-import { GradeLevel, StrandType, EnrollmentApplication, INFANTA_BARANGAYS } from '../../types/school';
+import { GradeLevel, StrandType, EnrollmentApplication, INFANTA_BARANGAYS, EnrollmentSettings } from '../../types/school';
 import { APP_ASSETS } from '../../assets';
 import { checkRateLimit, recordFailedAttempt, resetRateLimit, sanitizeText } from '../../utils/security';
 
@@ -42,6 +43,20 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
   initialTab = 'enroll',
 }) => {
   const [activeTab, setActiveTab] = useState<'enroll' | 'status' | 'guidelines'>(initialTab);
+  const [enrollmentSettings, setEnrollmentSettings] = useState<EnrollmentSettings>(() =>
+    schoolDb.getEnrollmentSettings()
+  );
+
+  React.useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab, isOpen]);
+
+  React.useEffect(() => {
+    const sync = () => setEnrollmentSettings(schoolDb.getEnrollmentSettings());
+    sync();
+    const unsub = schoolDb.subscribe(sync);
+    return () => unsub();
+  }, []);
 
   // Form states
   const [appType, setAppType] = useState<EnrollmentApplication['applicationType']>('Incoming JHS');
@@ -119,6 +134,10 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
   const handleEnrollmentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+    if (!schoolDb.getEnrollmentSettings().isOpen) {
+      setFormError('Online enrollment is currently closed or halted by the School Administration.');
+      return;
+    }
     if (!firstName.trim() || !lastName.trim() || !contactNumber.trim() || !guardianName.trim()) {
       setFormError('Please fill out all required student and guardian information.');
       return;
@@ -132,31 +151,36 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
     if (docGoodMoral) docs.push('Certificate of Good Moral Character');
     if (docPhotos) docs.push('2x2 Formal ID Photos');
 
-    const created = schoolDb.submitEnrollmentApplication({
-      applicationType: appType,
-      lrn: lrn.trim() ? lrn.trim() : undefined,
-      firstName: firstName.trim(),
-      middleName: middleName.trim(),
-      lastName: lastName.trim(),
-      extensionName: extensionName.trim() || undefined,
-      gender,
-      birthDate,
-      email: email.trim(),
-      contactNumber: contactNumber.trim(),
-      addressBarangay: `${addressBarangay}, Infanta, Quezon`,
-      previousSchool: previousSchool.trim() || 'Not specified',
-      targetGrade,
-      targetStrand,
-      guardianName: guardianName.trim(),
-      guardianContact: guardianContact.trim(),
-      documentsSubmitted: docs,
-      notes: 'Submitted via INHS Dedicated Online Enrollment Portal'
-    });
+    try {
+      const created = schoolDb.submitEnrollmentApplication({
+        applicationType: appType,
+        lrn: lrn.trim() ? lrn.trim() : undefined,
+        firstName: firstName.trim(),
+        middleName: middleName.trim(),
+        lastName: lastName.trim(),
+        extensionName: extensionName.trim() || undefined,
+        gender,
+        birthDate,
+        email: email.trim(),
+        contactNumber: contactNumber.trim(),
+        addressBarangay: `${addressBarangay}, Infanta, Quezon`,
+        previousSchool: previousSchool.trim() || 'Not specified',
+        targetGrade,
+        targetStrand,
+        guardianName: guardianName.trim(),
+        guardianContact: guardianContact.trim(),
+        documentsSubmitted: docs,
+        notes: 'Submitted via INHS Dedicated Online Enrollment Portal'
+      });
 
-    setTimeout(() => {
+      setTimeout(() => {
+        setIsSubmitting(false);
+        setSubmittedApp(created);
+      }, 400);
+    } catch (err: any) {
       setIsSubmitting(false);
-      setSubmittedApp(created);
-    }, 400);
+      setFormError(err?.message || 'Unable to submit enrollment application at this time.');
+    }
   };
 
   const handleStatusSearch = (e: React.FormEvent) => {
@@ -230,13 +254,18 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
               />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[10px] font-bold tracking-widest uppercase text-amber-300">
                   Department of Education • Region IV-A CALABARZON
                 </span>
                 <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-1.5 py-0.2 rounded font-mono">
-                  S.Y. 2026–2027
+                  S.Y. {enrollmentSettings.schoolYear}
                 </span>
+                {!enrollmentSettings.isOpen && (
+                  <span className="text-[9px] bg-rose-500/30 text-rose-200 border border-rose-400/50 px-1.5 py-0.2 rounded font-mono font-bold">
+                    ENROLLMENT CLOSED
+                  </span>
+                )}
               </div>
               <h3 className="text-base sm:text-lg font-bold font-crest tracking-tight text-white flex items-center gap-2">
                 <span>INHS Online Enrollment Portal</span>
@@ -354,10 +383,70 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
         <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-50">
           
           {/* ========================================================= */}
-          {/* TAB 1: ONLINE ENROLLMENT FORM */}
+          {/* TAB 1: ONLINE ENROLLMENT FORM (OR CLOSED NOTICE) */}
           {/* ========================================================= */}
           {activeTab === 'enroll' && (
-            submittedApp ? (
+            !enrollmentSettings.isOpen ? (
+              /* Official Closed / Halted Notice */
+              <div className="max-w-2xl mx-auto bg-white rounded-2xl border-2 border-rose-300 p-6 sm:p-8 shadow-xl space-y-6 animate-fade-in">
+                <div className="text-center space-y-3">
+                  <div className="w-16 h-16 bg-rose-100 text-rose-700 rounded-2xl flex items-center justify-center mx-auto shadow-xs border border-rose-200">
+                    <Lock className="w-8 h-8" />
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-[11px] font-bold uppercase tracking-wider border border-rose-200">
+                    <span>S.Y. {enrollmentSettings.schoolYear} · Submissions Halted</span>
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-extrabold font-crest text-slate-900">
+                    {enrollmentSettings.closedTitle}
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-lg mx-auto">
+                    {enrollmentSettings.closedReason}
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2.5 text-xs">
+                  {enrollmentSettings.reopenSchedule && (
+                    <div className="flex items-start gap-2 text-slate-700">
+                      <Calendar className="w-4 h-4 text-blue-900 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-slate-900">Advisory / Next Schedule:</strong>{' '}
+                        <span>{enrollmentSettings.reopenSchedule}</span>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-start gap-2 text-slate-700">
+                    <Building2 className="w-4 h-4 text-blue-900 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-slate-900">In-Campus Registrar Assistance:</strong>{' '}
+                      <span>Office of the School Registrar, Administration Building (Monday–Friday, 8:00 AM – 4:00 PM)</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-950">
+                  <strong>Already submitted an application?</strong> You can still check your verification status and section assignment anytime using the Application Status Tracker.
+                </div>
+
+                <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('status')}
+                    className="px-5 py-2.5 bg-blue-900 hover:bg-blue-800 text-white text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer shadow-sm transition-colors"
+                  >
+                    <Search className="w-4 h-4 text-amber-300" />
+                    <span>Track Existing Application Status</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('guidelines')}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <HelpCircle className="w-4 h-4" />
+                    <span>View Admission Guidelines</span>
+                  </button>
+                </div>
+              </div>
+            ) : submittedApp ? (
               /* Success Confirmation Slip */
               <div className="max-w-2xl mx-auto bg-white rounded-2xl border-2 border-emerald-500/40 p-6 sm:p-8 shadow-xl space-y-6 animate-scale-up">
                 <div className="text-center space-y-2">
@@ -980,9 +1069,17 @@ export const EnrollmentPortalModal: React.FC<EnrollmentPortalModalProps> = ({
                 <div className="flex justify-end pt-2">
                   <button
                     onClick={() => setActiveTab('enroll')}
-                    className="px-5 py-2.5 bg-blue-900 hover:bg-blue-800 text-white text-xs font-bold rounded-lg flex items-center gap-2 cursor-pointer shadow-sm transition-colors"
+                    className={`px-5 py-2.5 text-white text-xs font-bold rounded-lg flex items-center gap-2 cursor-pointer shadow-sm transition-colors ${
+                      enrollmentSettings.isOpen
+                        ? 'bg-blue-900 hover:bg-blue-800'
+                        : 'bg-rose-700 hover:bg-rose-800'
+                    }`}
                   >
-                    <span>Proceed to Online Enrollment Form</span>
+                    <span>
+                      {enrollmentSettings.isOpen
+                        ? 'Proceed to Online Enrollment Form'
+                        : 'Enrollment Currently Closed — View Notice'}
+                    </span>
                     <ArrowRight className="w-4 h-4 text-amber-300" />
                   </button>
                 </div>

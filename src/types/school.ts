@@ -263,3 +263,14 @@ export interface SchoolClassSection {
   maxCapacity: number;
 }
 
+export interface EnrollmentSettings {
+  isOpen: boolean;
+  schoolYear: string;
+  closedTitle: string;
+  closedReason: string;
+  reopenSchedule?: string;
+  updatedBy?: string;
+  updatedAt?: string;
+}
+
+

@@ -13,8 +13,11 @@ import {
   BookOpen,
   Calendar,
   Building2,
-  FileText
+  FileText,
+  Lock
 } from 'lucide-react';
+import { schoolDb } from '../services/schoolDatabase';
+import { EnrollmentSettings } from '../types/school';
 
 interface AdmissionsSectionProps {
   onOpenPortal: (role?: 'student_parent' | 'teacher' | 'admin') => void;
@@ -25,18 +28,37 @@ export const AdmissionsSection: React.FC<AdmissionsSectionProps> = ({
   onOpenPortal,
   onOpenEnrollmentPortal 
 }) => {
+  const [enrollmentSettings, setEnrollmentSettings] = React.useState<EnrollmentSettings>(() =>
+    schoolDb.getEnrollmentSettings()
+  );
+
+  React.useEffect(() => {
+    const sync = () => setEnrollmentSettings(schoolDb.getEnrollmentSettings());
+    sync();
+    const unsub = schoolDb.subscribe(sync);
+    return () => unsub();
+  }, []);
+
   return (
     <section id="admissions" className="py-10 sm:py-12 bg-slate-50 border-b border-slate-200 scroll-mt-36 sm:scroll-mt-40 lg:scroll-mt-44">
       <div className="max-w-7xl mx-auto px-4 sm:px-8">
         
         {/* Section Header */}
         <div className="max-w-3xl mb-6 sm:mb-8">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-bold tracking-widest uppercase text-blue-900">
               Admissions & Enrollment Office
             </span>
-            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-200">
-              S.Y. 2026–2027 Open
+            <span
+              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                enrollmentSettings.isOpen
+                  ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                  : 'bg-rose-100 text-rose-800 border-rose-200'
+              }`}
+            >
+              {enrollmentSettings.isOpen
+                ? `S.Y. ${enrollmentSettings.schoolYear} Open`
+                : `S.Y. ${enrollmentSettings.schoolYear} Enrollment Closed / Halted`}
             </span>
           </div>
           <h2 className="text-3xl sm:text-4xl font-extrabold font-crest tracking-tight text-slate-900 mt-1">
@@ -94,14 +116,33 @@ export const AdmissionsSection: React.FC<AdmissionsSectionProps> = ({
               </div>
             </div>
 
+            {/* Closed Notice Callout when Halted */}
+            {!enrollmentSettings.isOpen && (
+              <div className="p-3.5 rounded-xl bg-rose-500/20 border border-rose-400/40 text-rose-100 text-xs flex items-start gap-2.5">
+                <Lock className="w-4 h-4 text-rose-300 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-white">{enrollmentSettings.closedTitle}</div>
+                  <div className="text-rose-100/90 text-[11px] mt-0.5">{enrollmentSettings.closedReason}</div>
+                </div>
+              </div>
+            )}
+
             {/* Launch Action Buttons */}
             <div className="flex flex-wrap items-center gap-3.5 pt-4">
               <button
                 onClick={() => onOpenEnrollmentPortal && onOpenEnrollmentPortal('enroll')}
-                className="px-6 py-3.5 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 text-sm font-bold rounded-xl shadow-lg shadow-amber-500/25 flex items-center gap-2 cursor-pointer transition-all transform hover:-translate-y-0.5"
+                className={`px-6 py-3.5 text-sm font-bold rounded-xl shadow-lg flex items-center gap-2 cursor-pointer transition-all transform hover:-translate-y-0.5 ${
+                  enrollmentSettings.isOpen
+                    ? 'bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 shadow-amber-500/25'
+                    : 'bg-rose-700 hover:bg-rose-600 text-white shadow-rose-900/30 border border-rose-400/40'
+                }`}
               >
-                <FileCheck2 className="w-4 h-4" />
-                <span>Open Online Enrollment Portal</span>
+                {enrollmentSettings.isOpen ? <FileCheck2 className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                <span>
+                  {enrollmentSettings.isOpen
+                    ? 'Open Online Enrollment Portal'
+                    : 'Online Enrollment Closed (View Notice)'}
+                </span>
                 <ArrowRight className="w-4 h-4" />
               </button>
 
