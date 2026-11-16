@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   MapPin,
   Phone,
@@ -24,17 +24,22 @@ import { schoolDb } from '../services/schoolDatabase';
 import { PublicInquiry } from '../types/school';
 
 const INHS_COORDINATES = { lat: 14.7429743, lng: 121.6483008 };
+const INHS_INITIAL_CENTER = { lat: 14.74335, lng: 121.6483008 };
 const INHS_MAPS_SHORT_URL = 'https://maps.app.goo.gl/Jx8pFBHyieh2E3kB8';
 const INHS_DIRECTIONS_URL =
   'https://www.google.com/maps/dir/?api=1&destination=14.7429743,121.6483008';
+const MAP_LIBRARIES: ('marker')[] = ['marker'];
 
-const GOOGLE_MAPS_API_KEY =
-  (globalThis as unknown as { GOOGLE_MAPS_API_KEY?: string }).GOOGLE_MAPS_API_KEY ||
-  import.meta.env.VITE_GOOGLE_MAPS_API_KEY ||
-  '';
+function getGoogleMapsApiKey(): string {
+  return (
+    (globalThis as unknown as { GOOGLE_MAPS_API_KEY?: string }).GOOGLE_MAPS_API_KEY ||
+    import.meta.env.VITE_GOOGLE_MAPS_API_KEY ||
+    ''
+  );
+}
 
 const CampusMapFallback: React.FC = () => (
-  <div className="h-64 rounded-lg bg-blue-950 text-white p-4 relative flex flex-col justify-between overflow-hidden">
+  <div className="h-72 sm:h-80 rounded-lg bg-blue-950 text-white p-4 relative flex flex-col justify-between overflow-hidden">
     <div className="text-[11px] text-amber-300 font-semibold tracking-wider uppercase">
       Infanta, Quezon Pacific Coastway
     </div>
@@ -62,27 +67,43 @@ const CampusMapFallback: React.FC = () => (
   </div>
 );
 
-const CampusInteractiveMapContent: React.FC = () => {
+interface CampusInteractiveMapContentProps {
+  externalFailure: boolean;
+}
+
+const CampusInteractiveMapContent: React.FC<CampusInteractiveMapContentProps> = ({ externalFailure }) => {
   const loadingStatus = useApiLoadingStatus();
   const [markerRef, marker] = useAdvancedMarkerRef();
   const [infoWindowOpen, setInfoWindowOpen] = useState(true);
+  const [tilesLoaded, setTilesLoaded] = useState(false);
 
   if (
+    externalFailure ||
     loadingStatus === APILoadingStatus.FAILED ||
     loadingStatus === APILoadingStatus.AUTH_FAILURE
   ) {
     return <CampusMapFallback />;
   }
 
+  const isLoading =
+    !tilesLoaded &&
+    (loadingStatus === APILoadingStatus.NOT_LOADED || loadingStatus === APILoadingStatus.LOADING);
+
   return (
-    <div className="h-64 w-full rounded-lg overflow-hidden border border-slate-200 relative bg-slate-200">
+    <div className="h-72 sm:h-80 w-full rounded-lg overflow-hidden border border-slate-200 relative bg-slate-200">
+      {isLoading && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-100/90 text-slate-600 text-xs font-medium pointer-events-none">
+          Loading campus map...
+        </div>
+      )}
       <GoogleMap
         mapId="DEMO_MAP_ID"
-        defaultCenter={INHS_COORDINATES}
-        defaultZoom={17}
+        defaultCenter={INHS_INITIAL_CENTER}
+        defaultZoom={16}
         gestureHandling="cooperative"
         internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
         style={{ width: '100%', height: '100%' }}
+        onTilesLoaded={() => setTilesLoaded(true)}
       >
         <AdvancedMarker
           ref={markerRef}
@@ -96,11 +117,12 @@ const CampusInteractiveMapContent: React.FC = () => {
         {infoWindowOpen && marker && (
           <InfoWindow
             anchor={marker}
-            maxWidth={240}
+            maxWidth={220}
+            pixelOffset={[0, -4]}
             onCloseClick={() => setInfoWindowOpen(false)}
           >
-            <div className="p-1 text-slate-800 space-y-1">
-              <div className="text-xs font-bold text-blue-950">
+            <div className="pr-1 text-slate-800 space-y-1">
+              <div className="text-xs font-bold text-blue-950 leading-tight">
                 Infanta National High School
               </div>
               <div className="text-[11px] text-slate-600 leading-snug">
@@ -132,6 +154,14 @@ export const ContactSection: React.FC = () => {
   const [isSent, setIsSent] = useState(false);
   const [submittedInquiry, setSubmittedInquiry] = useState<PublicInquiry | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [mapAuthFailed, setMapAuthFailed] = useState(false);
+  const mapsApiKey = useMemo(() => getGoogleMapsApiKey(), []);
+
+  useEffect(() => {
+    const handleMapAuthFailure = () => setMapAuthFailed(true);
+    window.addEventListener('gmp-map-auth-failure', handleMapAuthFailure);
+    return () => window.removeEventListener('gmp-map-auth-failure', handleMapAuthFailure);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -232,14 +262,15 @@ export const ContactSection: React.FC = () => {
                 <span className="text-[11px] text-slate-500">Poblacion 38, Infanta</span>
               </div>
 
-              {GOOGLE_MAPS_API_KEY ? (
+              {mapsApiKey && !mapAuthFailed ? (
                 <APIProvider
-                  apiKey={GOOGLE_MAPS_API_KEY}
-                  libraries={['marker']}
+                  apiKey={mapsApiKey}
+                  libraries={MAP_LIBRARIES}
                   language="en"
                   region="PH"
+                  onError={() => setMapAuthFailed(true)}
                 >
-                  <CampusInteractiveMapContent />
+                  <CampusInteractiveMapContent externalFailure={mapAuthFailed} />
                 </APIProvider>
               ) : (
                 <CampusMapFallback />
