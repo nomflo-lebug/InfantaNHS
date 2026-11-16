@@ -1,15 +1,125 @@
 import React, { useState } from 'react';
-import { 
-  MapPin, 
-  Phone, 
-  Mail, 
-  Clock, 
-  Send, 
-  CheckCircle2, 
+import {
+  MapPin,
+  Phone,
+  Mail,
+  Clock,
+  Send,
+  CheckCircle2,
   ExternalLink,
   Building,
-  HelpCircle
+  Navigation
 } from 'lucide-react';
+import {
+  APIProvider,
+  Map as GoogleMap,
+  AdvancedMarker,
+  Pin,
+  InfoWindow,
+  useAdvancedMarkerRef,
+  useApiLoadingStatus,
+  APILoadingStatus
+} from '@vis.gl/react-google-maps';
+
+const INHS_COORDINATES = { lat: 14.7429743, lng: 121.6483008 };
+const INHS_MAPS_SHORT_URL = 'https://maps.app.goo.gl/Jx8pFBHyieh2E3kB8';
+const INHS_DIRECTIONS_URL =
+  'https://www.google.com/maps/dir/?api=1&destination=14.7429743,121.6483008';
+
+const GOOGLE_MAPS_API_KEY =
+  (globalThis as unknown as { GOOGLE_MAPS_API_KEY?: string }).GOOGLE_MAPS_API_KEY ||
+  import.meta.env.VITE_GOOGLE_MAPS_API_KEY ||
+  '';
+
+const CampusMapFallback: React.FC = () => (
+  <div className="h-64 rounded-lg bg-blue-950 text-white p-4 relative flex flex-col justify-between overflow-hidden">
+    <div className="text-[11px] text-amber-300 font-semibold tracking-wider uppercase">
+      Infanta, Quezon Pacific Coastway
+    </div>
+
+    <div className="space-y-1.5 z-10">
+      <div className="flex items-center gap-2">
+        <div className="w-3 h-3 rounded-full bg-amber-400 border-2 border-white" />
+        <span className="text-xs font-bold text-white">Infanta National High School</span>
+      </div>
+      <div className="text-[11px] text-slate-200 leading-relaxed">
+        Purok 1, Barangay Poblacion 38, Infanta, Quezon 4336 · Accessible via F. Gurango Sr. Avenue, 5 mins from Infanta Town Plaza.
+      </div>
+      <a
+        href={INHS_MAPS_SHORT_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1.5 mt-1 px-3 py-1.5 rounded-md bg-amber-400 hover:bg-amber-300 text-blue-950 text-[11px] font-bold transition-colors"
+      >
+        <ExternalLink className="w-3.5 h-3.5" />
+        <span>View on Google Maps</span>
+      </a>
+    </div>
+
+    <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]" />
+  </div>
+);
+
+const CampusInteractiveMapContent: React.FC = () => {
+  const loadingStatus = useApiLoadingStatus();
+  const [markerRef, marker] = useAdvancedMarkerRef();
+  const [infoWindowOpen, setInfoWindowOpen] = useState(true);
+
+  if (
+    loadingStatus === APILoadingStatus.FAILED ||
+    loadingStatus === APILoadingStatus.AUTH_FAILURE
+  ) {
+    return <CampusMapFallback />;
+  }
+
+  return (
+    <div className="h-64 w-full rounded-lg overflow-hidden border border-slate-200 relative bg-slate-200">
+      <GoogleMap
+        mapId="DEMO_MAP_ID"
+        defaultCenter={INHS_COORDINATES}
+        defaultZoom={17}
+        gestureHandling="cooperative"
+        internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+        style={{ width: '100%', height: '100%' }}
+      >
+        <AdvancedMarker
+          ref={markerRef}
+          position={INHS_COORDINATES}
+          title="Infanta National High School"
+          onClick={() => setInfoWindowOpen((prev) => !prev)}
+        >
+          <Pin background="#1e3a8a" borderColor="#f59e0b" glyphColor="#fde68a" />
+        </AdvancedMarker>
+
+        {infoWindowOpen && marker && (
+          <InfoWindow
+            anchor={marker}
+            maxWidth={240}
+            onCloseClick={() => setInfoWindowOpen(false)}
+          >
+            <div className="p-1 text-slate-800 space-y-1">
+              <div className="text-xs font-bold text-blue-950">
+                Infanta National High School
+              </div>
+              <div className="text-[11px] text-slate-600 leading-snug">
+                Barangay Poblacion 38, Infanta, Quezon 4336
+              </div>
+              <a
+                href={INHS_MAPS_SHORT_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-800 hover:text-blue-950 underline pt-0.5"
+              >
+                <span>Open in Google Maps</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </InfoWindow>
+        )}
+      </GoogleMap>
+    </div>
+  );
+};
 
 export const ContactSection: React.FC = () => {
   const [name, setName] = useState('');
@@ -94,35 +204,49 @@ export const ContactSection: React.FC = () => {
               </div>
             </div>
 
-            {/* Stylized Visual Location Map Mockup */}
+            {/* Campus Location Landmark with Google Maps */}
             <div className="rounded-xl border border-slate-200 overflow-hidden bg-slate-100 p-4 space-y-3">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-slate-800">Campus Location Landmark</span>
                 <span className="text-[11px] text-slate-500">Poblacion 38, Infanta</span>
               </div>
 
-              {/* Map Illustration Box */}
-              <div className="h-44 rounded-lg bg-blue-950 text-white p-4 relative flex flex-col justify-between overflow-hidden">
-                <div className="text-[11px] text-amber-300 font-semibold tracking-wider uppercase">
-                  Infanta, Quezon Pacific Coastway
-                </div>
+              {GOOGLE_MAPS_API_KEY ? (
+                <APIProvider
+                  apiKey={GOOGLE_MAPS_API_KEY}
+                  libraries={['marker']}
+                  language="en"
+                  region="PH"
+                >
+                  <CampusInteractiveMapContent />
+                </APIProvider>
+              ) : (
+                <CampusMapFallback />
+              )}
 
-                <div className="space-y-1 z-10">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-amber-400 border-2 border-white animate-pulse" />
-                    <span className="text-xs font-bold text-white">Infanta National High School</span>
-                  </div>
-                  <div className="text-[10px] text-slate-300">
-                    Accessible via F. Gurango Sr. Avenue, 5 mins from Infanta Town Plaza & Parish of the Divine Infant Jesus.
-                  </div>
-                </div>
-
-                {/* Subtle map grid vector lines */}
-                <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]" />
+              <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                <a
+                  href={INHS_MAPS_SHORT_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-900 hover:bg-blue-800 text-white text-[11px] font-semibold transition-colors shadow-xs"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Open in Google Maps</span>
+                </a>
+                <a
+                  href={INHS_DIRECTIONS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-[11px] font-semibold transition-colors"
+                >
+                  <Navigation className="w-3.5 h-3.5 text-blue-900" />
+                  <span>Get Directions</span>
+                </a>
               </div>
 
-              <div className="text-[11px] text-slate-500">
-                Visitors are requested to log with the School Security at Gate 1 and present a valid government or student ID.
+              <div className="text-[11px] text-slate-500 leading-relaxed">
+                Accessible via F. Gurango Sr. Avenue, 5 mins from Infanta Town Plaza. Visitors are requested to log with the School Security at Gate 1 and present a valid government or student ID.
               </div>
             </div>
           </div>
